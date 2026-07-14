@@ -6,7 +6,8 @@ interface Props {
 }
 
 const { term, definition, slug = term.toLowerCase().replaceAll(' ', '-') } = Astro.props;
-const glossaryUrl = `${import.meta.env.BASE_URL}reference/glossary/#${slug}`;
+const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+const glossaryUrl = `${baseUrl}/reference/glossary/#${slug}`;
 ---
 
 <span class="term">

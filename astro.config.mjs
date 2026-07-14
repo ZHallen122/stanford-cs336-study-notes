@@ -1,9 +1,18 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import { unified } from '@astrojs/markdown-remark';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
 export default defineConfig({
   site: 'https://zhallen122.github.io',
   base: '/stanford-cs336-study-notes',
+  markdown: {
+    processor: unified({
+      remarkPlugins: [remarkMath],
+      rehypePlugins: [rehypeKatex]
+    })
+  },
   integrations: [
     starlight({
       title: 'CS336 · 从零学语言模型',
@@ -15,7 +24,7 @@ export default defineConfig({
         }
       },
       favicon: '/favicon.svg',
-      customCss: ['./src/styles/custom.css'],
+      customCss: ['katex/dist/katex.min.css', './src/styles/custom.css'],
       components: {
         Footer: './src/components/AccessibleFooter.astro'
       },
