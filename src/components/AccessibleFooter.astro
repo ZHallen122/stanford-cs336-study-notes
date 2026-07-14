@@ -5,11 +5,16 @@ import Default from '@astrojs/starlight/components/Footer.astro';
 <Default><slot /></Default>
 
 <aside class="reading-tools" aria-label="阅读显示设置">
-  <button class="reading-tools__trigger" type="button" aria-controls="reading-tools-panel">
+  <button
+    class="reading-tools__trigger"
+    type="button"
+    aria-controls="reading-tools-panel"
+    aria-expanded="false"
+  >
     <span aria-hidden="true">Aa</span>
     <span>阅读设置</span>
   </button>
-  <div class="reading-tools__panel" id="reading-tools-panel">
+  <div class="reading-tools__panel" id="reading-tools-panel" hidden>
     <p class="reading-tools__title">让文字更容易读</p>
     <div class="reading-tools__actions" role="group" aria-label="文字大小">
       <button type="button" data-reading-action="smaller" aria-label="缩小正文">A−</button>
@@ -37,9 +42,33 @@ import Default from '@astrojs/starlight/components/Footer.astro';
     const root = document.documentElement;
     const tools = document.querySelector('.reading-tools');
     if (!tools) return;
+    if (tools.dataset.readingToolsReady === 'true') return;
+    tools.dataset.readingToolsReady = 'true';
 
+    const trigger = tools.querySelector('.reading-tools__trigger');
+    const panel = tools.querySelector('.reading-tools__panel');
     const toggles = tools.querySelectorAll('[data-reading-toggle]');
     const defaults = { scale: 1, focus: false, wide: false, motion: false };
+
+    const setPanelOpen = (open) => {
+      if (!trigger || !panel) return;
+      panel.hidden = !open;
+      trigger.setAttribute('aria-expanded', String(open));
+    };
+
+    trigger?.addEventListener('click', () => {
+      setPanelOpen(panel?.hidden ?? true);
+    });
+
+    document.addEventListener('pointerdown', (event) => {
+      if (!event.composedPath().includes(tools)) setPanelOpen(false);
+    });
+
+    tools.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      setPanelOpen(false);
+      trigger?.focus();
+    });
 
     const load = () => {
       try { return { ...defaults, ...JSON.parse(localStorage.getItem(storageKey) || '{}') }; }

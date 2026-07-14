@@ -131,6 +131,12 @@ body {
   transition-duration: 0.01ms !important;
 }
 
+/* Starlight isolates the article pane below the desktop table of contents.
+   Let this fixed control participate in the page-level stacking order. */
+.main-pane:has(.reading-tools) {
+  isolation: auto;
+}
+
 .reading-tools {
   position: fixed;
   right: 1rem;
@@ -172,7 +178,6 @@ body {
 }
 
 .reading-tools__panel {
-  display: none;
   width: min(18rem, calc(100vw - 2rem));
   padding: 1rem;
   color: var(--sl-color-white);
@@ -182,8 +187,7 @@ body {
   box-shadow: 0 8px 32px rgb(0 0 0 / 18%);
 }
 
-.reading-tools:hover .reading-tools__panel,
-.reading-tools:focus-within .reading-tools__panel { display: block; }
+.reading-tools__panel[hidden] { display: none; }
 
 .reading-tools__title { margin: 0 0 0.75rem; font-weight: 750; }
 .reading-tools__actions { display: flex; gap: 0.5rem; margin-bottom: 0.7rem; }
