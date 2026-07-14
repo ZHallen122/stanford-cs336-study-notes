@@ -8,6 +8,10 @@ tableOfContents:
 
 术语保留英文，因为代码、论文和报错通常使用英文；中文用于建立第一层理解。
 
+## Activation
+
+**激活值。** 模型执行 forward 时，由当前输入和参数产生的中间 tensor。训练通常需要保留部分 activation，供反向传播计算梯度。
+
 ## Arithmetic intensity
 
 **算术强度。** 单位数据搬运对应多少浮点运算。它帮助判断算子更可能受计算吞吐还是内存带宽限制。
@@ -20,9 +24,17 @@ tableOfContents:
 
 **反向传播。** 从 loss 出发，利用链式法则计算每个参数梯度的过程。
 
+## Batch
+
+**批次。** 一次并行送入模型的一组样本或序列。更大的 batch 可能提高硬件吞吐，也会增加 activation 内存并影响优化行为。
+
 ## BPE
 
 **Byte Pair Encoding。** 从小单位开始，反复合并语料中最常见相邻对的 tokenizer 训练方法。
+
+## Context window
+
+**上下文窗口。** 模型一次 forward 能直接参考的 token 范围。更长的窗口会增加内存与计算成本，并不保证模型能同样有效地利用所有位置。
 
 ## Embedding
 
@@ -47,6 +59,10 @@ tableOfContents:
 ## Loss
 
 衡量预测与训练目标差距的标量。训练优化 loss，但低训练 loss 不自动等于真实场景表现好。
+
+## Optimizer
+
+**优化器。** 根据参数的 gradient 和内部状态计算参数更新的算法，例如 AdamW。它决定怎样走，但训练目标由 loss 定义。
 
 ## Parameter
 

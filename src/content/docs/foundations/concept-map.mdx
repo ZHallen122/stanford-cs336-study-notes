@@ -1,56 +1,229 @@
 ---
 title: 给 SDE 的概念地图
-description: 用熟悉的软件系统结构理解语言模型从数据到输出的完整路径。
+description: 从数据 contract、运行状态和资源账本理解语言模型从文本到参数更新的完整路径。
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
 ---
 
 import Term from '../../../components/Term.astro';
+import { Aside, Card, CardGrid, Steps } from '@astrojs/starlight/components';
 import dataFlow from '../../../assets/diagrams/language-model-data-flow.svg';
 import dataFlowMobile from '../../../assets/diagrams/language-model-data-flow-mobile.svg';
 
-## 会在哪些课程里用到
+<Aside type="note" title="这是一张导航地图，不是入学考试">
+你不需要先学完本页才能开始 Lecture 1。第一次只看“一句话版本”和流程图；遇到陌生组件时再回来查输入、输出与资源成本。
+</Aside>
 
-- [Lecture 1 · Overview & Tokenization](../../lessons/01-tokenization/)：先定位 tokenization，再理解后续 Transformer、loss 与参数更新在流水线中的位置。
-- 后续每一讲都会回到这张地图；遇到新组件时，再回来确认它的输入、输出和上下游。
+## 30 秒版本：一句话加一张图
 
-## 一句话版本
-
-语言模型接收一串离散 ID，反复通过参数化的数值计算预测下一个 ID；训练就是根据预测错误，调整这些参数。
+语言模型先把文本变成有限集合中的整数 ID，再把 ID 变成向量；一连串数值计算根据上下文为下一个 ID 打分。这些计算由大量可调整的数值控制，这些数值就是参数。训练会比较预测与正确答案，再调整参数，让下一次预测更好。
 
 <figure class="teaching-figure">
   <picture>
     <source media="(max-width: 40rem)" srcset={dataFlowMobile.src} />
     <img src={dataFlow.src} width={dataFlow.width} height={dataFlow.height} alt="语言模型数据流：输入文本经过 tokenizer 得到形状 T 的 token ID，embedding 变成 T×D，Transformer 输出仍为 T×D，输出层生成 T×V 的 logits，最后得到下一个 token 的概率。" />
   </picture>
-  <figcaption><code>T</code> 是序列长度，<code>D</code> 是模型维度，<code>V</code> 是词表大小。</figcaption>
+  <figcaption><code>T</code> 是序列长度，<code>D</code> 是模型维度，<code>V</code> 是词表大小。训练会从图的右端沿计算关系向左求梯度，再更新各层参数。</figcaption>
 </figure>
+
+如果现在只能记住一件事，请记住：**每一站都在改变数据表示，但必须保留可检查的输入输出 contract。**
+
+## 会在哪些课程里用到
+
+- [Lecture 1 · Overview & Tokenization](../../lessons/01-tokenization/)：先定位 tokenization，再理解 Transformer、loss 与参数更新在流水线中的位置。
+- [Lecture 2 · PyTorch 与资源核算](../../lessons/02-pytorch-resources/)：开始给每个箭头补 shape、dtype、device、FLOPs 和内存。
+- 后续每一讲都会回到这张地图。新组件不是孤立知识，而是在已有 contract 中替换一站或改变一项成本。
+
+## 先分清四类东西
+
+很多初学者不是卡在某个公式，而是把“数据、模型、运行时状态、指标”混成一团。先把它们放进四个抽屉。
+
+<CardGrid>
+  <Card title="输入与目标">
+    文本、token ID 和训练目标来自数据。它们会随 batch（一组同时处理的样本）改变，不是模型学到的长期状态。
+  </Card>
+  <Card title="参数 · parameters">
+    训练会修改的持久数值，例如 embedding 表和线性层权重。保存 checkpoint，主要就是保存这些参数及训练状态。
+  </Card>
+  <Card title="临时状态">
+    Forward 产生中间结果 activation；backward 产生 gradient，表示 loss 对参数变化的敏感度。它们通常是训练显存的大头。
+  </Card>
+  <Card title="分数与指标">
+    Logits 是候选 token 的原始分数，loss 是训练误差标量，evaluation metric 衡量指定能力。它们都不是事实数据库。
+  </Card>
+</CardGrid>
+
+<Term term="parameter" slug="parameter" definition="训练过程中会被优化器更新的持久数值，例如权重矩阵。">Parameter</Term> 类似程序的持久配置，但它不是人工编写的规则表。<Term term="activation" slug="activation" definition="模型执行 forward 时由输入和参数计算出的中间 tensor。">Activation</Term> 更像一次请求的中间结果；它依赖当前输入，下一批数据会产生另一组值。
+
+## 5 分钟版本：逐站走一遍
+
+先约定四个会反复出现的维度：`B` 是 batch size，`T` 是每条序列的 token 数，`D` 是模型内部向量宽度，`V` 是词表大小。
+
+<Steps>
+1. **原始文本 → token ID**
+
+   Tokenizer 接收 string，输出整数序列。补齐 batch 后，常见 shape 是 `(B, T)`；每个整数必须落在 `0..V-1`。
+
+2. **Token ID → embedding**
+
+   Embedding table 像一个以 token ID 为 key 的向量数组。查表后，shape 从 `(B, T)` 变成 `(B, T, D)`。
+
+3. **Embedding → contextual representation**
+
+   Transformer block 让每个位置组合上下文信息。输入和输出通常都保持 `(B, T, D)`，但每个位置的值已经依赖其他位置。
+
+4. **内部向量 → logits**
+
+   输出层把每个位置的 `D` 维向量映射成 `V` 个候选 token 分数，得到 `(B, T, V)`。Logits 还不是概率，也不是最终选中的 token。
+
+5. **Logits + target → loss**
+
+   训练数据提供正确的下一个 token，shape 通常是 `(B, T)`。Loss 把大量位置的预测误差汇总成一个用于优化的标量。
+
+6. **Loss → gradient → parameter update**
+
+   Backpropagation 计算 loss 对每个参数的 gradient；optimizer 读取参数、梯度和自己的状态，写回更新后的参数。
+</Steps>
+
+这条链最常见的错误不是“模型不够聪明”，而是 contract 断了：ID 越界、shape 对不上、target 错位、dtype 不合适，或 tensor 在错误的 device 上。
+
+## 推理与训练：共用 forward，终点不同
+
+| 阶段 | 推理 / inference | 训练 / training |
+| --- | --- | --- |
+| 输入 | prompt token IDs | 一批训练 token IDs 与 targets |
+| 共用主线 | tokenizer → embedding → Transformer → logits | tokenizer → embedding → Transformer → logits |
+| 接下来 | 从 logits 选择一个 token，追加到上下文后继续 | 计算 loss，再执行 backward 与 optimizer step |
+| 参数 | 只读 | 被 optimizer 更新 |
+| 主要临时状态 | 当前上下文、KV cache 等 | activations、gradients、optimizer state |
+| 输出 | 新 token、评分或生成文本 | 更新后的参数与训练指标 |
+
+:::caution[生成不是一次把答案吐完]
+自回归生成通常一次只选择一个新 token，然后把它加入输入，再执行下一步。长输出意味着多轮串行 forward；这也是 inference latency 与上下文长度密切相关的原因。
+:::
+
+## 四个贯穿全课的维度
+
+看到 tensor shape 时，先寻找下面四个字母。它们不只是数学符号，也是资源预算的旋钮。
+
+| 维度 | 它控制什么 | 增大时先关注什么 |
+| --- | --- | --- |
+| `B` · batch size | 一次并行处理多少条序列 | activation 内存、吞吐、梯度统计 |
+| `T` · sequence length | 每条序列有多少 token | attention 成本、上下文内存、生成延迟 |
+| `D` · model dimension | 每个 token 的内部表示有多宽 | 参数量、矩阵乘法 FLOPs、activation 内存 |
+| `V` · vocabulary size | 模型可以直接打分的 token 数 | embedding / 输出层参数、logits 内存 |
+
+后面还会遇到层数 `L`、attention head 数等维度。处理方法不变：问它出现在哪些 shape 中，以及时间和内存随它如何增长。
 
 ## 从 Web 服务映射到语言模型
 
-| 软件系统概念 | 语言模型中的近似对应 | 需要警惕的差别 |
+类比的价值是建立第一个抓手，不是证明两边完全相同。
+
+| 软件系统概念 | 语言模型中的近似对应 | 类比失效的位置 |
 | --- | --- | --- |
-| 请求解析 | tokenizer | token 边界不是业务字段边界 |
-| 内部数据结构 | tensor | shape 是类型的一部分，却常在运行时才暴露错误 |
-| 可配置程序 | model + weights | “程序行为”主要存进大量浮点参数 |
-| 测试指标 | loss / evaluation metric | 单个指标无法覆盖真实能力 |
-| 编译与执行优化 | kernel fusion / mixed precision | 数值精度会改变结果 |
-| 横向扩展 | distributed training | 节点之间还要同步梯度或参数 |
+| 请求解析与序列化 | tokenizer | token 边界不是业务字段边界，同一概念可能被拆成多个 token |
+| API / schema contract | tensor shape、dtype、device | 很多错误到运行时才暴露，类型系统不一定提前保护你 |
+| 程序与持久配置 | architecture + parameters | 行为主要由数据优化出的浮点数决定，不是可逐行审查的业务规则 |
+| 请求内中间结果 | activations | 训练为了 backward 需要保留大量中间值 |
+| 错误信号与测试指标 | loss + evaluation | 一个平均 loss 无法覆盖事实性、安全性或真实用户体验 |
+| 编译与执行优化 | kernel fusion、mixed precision | 改变执行方式也可能改变数值误差和稳定性 |
+| 横向扩展 | distributed training | 节点之间必须同步梯度、参数或 activation，通信会进入关键路径 |
 
-## 数据怎样流动
-
-原始文本先由 <Term term="tokenizer" slug="tokenizer" definition="把文本编码为 token ID，并把 ID 解码回文本的规则与实现。">tokenizer</Term> 转成整数 ID。ID 经过 embedding 变成向量，Transformer 在上下文中组合这些向量，最后输出每个候选 token 的分数。
-
-训练时，我们用正确的下一个 token 计算 <Term term="loss" slug="loss" definition="衡量模型预测与目标差距的标量；训练会尝试降低它。">loss</Term>，再通过反向传播得到每个参数应该如何变化。
-
-:::caution[模型不是数据库]
-参数中包含从数据学到的统计模式，但不能把它当作可精确寻址、可追踪来源的事实存储。
+:::caution[模型不是数据库，也不是普通函数]
+参数包含从数据中压缩出的统计模式，但不能提供数据库式的精确寻址与来源追踪。同样输入通常会得到同样 logits，但采样、并行执行和数值精度可能让最终输出或训练轨迹发生变化。
 :::
 
-## 先保留的五个问题
+## 一张资源账本
 
-学习任何新组件时都问：
+正确性解决“结果能不能信”，资源核算解决“实验能不能跑完”。先用下面这张粗粒度账本定位成本，Lecture 2 再计算具体数字。
 
-1. 输入和输出分别是什么？shape 是什么？
-2. 它有没有可学习参数？
-3. 训练时和推理时行为是否不同？
-4. 时间与显存成本随哪个维度增长？
-5. 失败时能观察到什么？
+| 阶段 | 主要计算或存储 | 常见瓶颈信号 |
+| --- | --- | --- |
+| 数据与 tokenization | 文本读取、清洗、整数序列 | CPU 忙但 GPU 等待、输入长度分布异常 |
+| Forward | 矩阵乘法、attention、activations | 吞吐低、显存随 `B` 或 `T` 快速上升 |
+| Backward | 保存的 activation、gradient 计算 | 训练显存明显高于 inference、数值出现 NaN/Inf |
+| Optimizer | 参数、gradient、optimizer state | step 时显存峰值、更新后 loss 不动或发散 |
+| 多设备训练 | 参数 / gradient / activation 通信 | GPU 利用率有空洞、扩机器后加速很少 |
+
+模型规模不是唯一成本来源。同一个模型，换更长序列、更大 batch、不同 dtype 或更低效的 kernel，都可能让资源需求发生数量级变化。
+
+## 出问题时按四层调试
+
+<Steps>
+1. **先查 contract**：打印 shape、dtype、device、取值范围和是否需要 gradient。
+2. **再查数值**：寻找 NaN、Inf、全零、极端最大值，以及 loss 是否接近预期基线。
+3. **再查学习信号**：确认 target 没有错位、gradient 不是全零、参数确实被 optimizer 更新。
+4. **最后查性能**：在正确性通过的小输入上 profile，区分计算、内存、通信和数据等待。
+</Steps>
+
+:::tip[先做最小可复现实验]
+先用固定随机种子、极小 batch 和很短序列在 CPU 上跑通。确认 contract 与数值后，再移动到 GPU、增加数据量或启用复杂优化。官方课程也建议先在 CPU 上调试正确性。
+:::
+
+## 课程路线怎样落在地图上
+
+| 课程阶段 | 地图上重点扩展的部分 | 对应作业主线 |
+| --- | --- | --- |
+| Tokenization、PyTorch、architecture | 数据 contract、forward、loss、optimizer | A1 · Basics |
+| Hardware、kernels、parallelism | 每个算子的资源账本与多设备通信 | A2 · Systems |
+| Scaling laws、inference、evaluation | 预算决策、生成路径与质量测量 | A3 · Scaling |
+| Data source、filtering、deduplication | 流水线最左侧的数据质量与混合 | A4 · Data |
+| SFT、RL、alignment | target / reward 如何改变参数更新方向 | A5 · Alignment and Reasoning RL |
+
+课程不是学完 Transformer 就结束。模型行为还取决于数据、训练预算、执行系统、evaluation 与 post-training；这也是这张地图要一直更新的原因。
+
+## 常见误区
+
+### “Tensor 就是一个 NumPy array”
+
+数值数组只是第一层。训练中的 tensor 还带 dtype、device 和 gradient tracking；这些执行属性会改变内存、速度和可否反向传播。
+
+### “Loss 下降说明产品质量一定上升”
+
+Loss 只衡量指定目标上的平均误差。数据污染、评测泄漏、分布变化或指标覆盖不足，都可能让 loss 与真实需求脱节。
+
+### “训练只是多跑几次 inference”
+
+训练与推理共用 forward，但训练还要保存 activation、计算 gradient，并维护 optimizer state。它们的内存与执行路径不同。
+
+### “GPU 不满就应该继续增大 batch”
+
+利用率低可能来自数据等待、通信、低效 kernel 或同步。盲目加大 `B` 可能先耗尽显存，也可能改变优化行为。
+
+## 理解检查
+
+### 第一层：能否沿箭头复述
+
+1. 文本为什么不能直接送进 Transformer？
+2. `(B, T)` 在 embedding 后为什么变成 `(B, T, D)`？
+3. Logits、概率、最终选择的 token 是同一件东西吗？
+
+### 第二层：能否区分状态
+
+1. Parameter 与 activation 哪一个跨 batch 保留？
+2. 为什么 training 通常比 inference 占更多显存？
+3. Gradient 是输入数据、模型参数，还是 loss 导出的临时信号？
+
+### 第三层：能否做工程判断
+
+1. GPU 经常等待数据时，你会先检查流水线的哪一段？
+2. 把 `T` 翻倍时，应该重新核算哪些时间和内存成本？
+3. Loss 正常下降但真实样例变差时，为什么不能只继续训练？
+
+## 带着这五个问题进入每一讲
+
+1. 输入和输出分别是什么？shape、dtype、device 是什么？
+2. 它读取或写入哪些 parameter 与临时状态？
+3. Training 和 inference 是否走不同路径？
+4. 时间与内存成本随 `B`、`T`、`D`、`V` 中哪个维度增长？
+5. 失败时能观察到什么，最小复现实验是什么？
+
+不需要一次记住所有答案。每学到一个新组件，就回来给这五个问题补一行，这张地图会逐渐从“名词列表”变成可调试的系统模型。
+
+## 官方依据与维护状态
+
+- [CS336 Spring 2026 课程主页与 schedule](https://cs336.stanford.edu/)
+- [Lecture 1 executable trace](https://cs336.stanford.edu/lectures/?trace=lecture_01)
+- 本页是本站为零 AI 背景 SDE 提供的解释与导航，不是官方讲义的逐字转写。
+- 最后对照：CS336 Spring 2026，2026-07-13。
