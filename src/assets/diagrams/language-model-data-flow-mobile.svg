@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 1040" role="img" aria-labelledby="title desc">
+  <title id="title">语言模型数据流手机版</title><desc id="desc">输入文本从上到下依次经过 token ID、embedding、Transformer、logits，最后得到下一个 token 的概率。</desc>
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#52706a"/></marker><style>.bg{fill:#fbfaf6}.b{fill:#fff;stroke:#b8cac5;stroke-width:3}.f{fill:#dff1ec;stroke:#176b61;stroke-width:4}.l{stroke:#52706a;stroke-width:4;marker-end:url(#a)}.t{font:700 30px system-ui,sans-serif;fill:#16221f}.s{font:400 25px system-ui,sans-serif;fill:#53635f}.h{font:700 25px ui-monospace,monospace;fill:#176b61}</style></defs>
+  <rect class="bg" width="600" height="1040" rx="28"/><text class="t" x="300" y="58" text-anchor="middle">一次前向计算</text>
+  <g text-anchor="middle">
+    <rect class="b" x="95" y="95" width="410" height="125" rx="18"/><text class="t" x="300" y="142">输入文本</text><text class="s" x="300" y="184">“Hello, 猫!” · string</text>
+    <line class="l" x1="300" y1="220" x2="300" y2="265"/>
+    <rect class="f" x="95" y="270" width="410" height="125" rx="18"/><text class="t" x="300" y="317">Token IDs</text><text class="h" x="300" y="359">[15496, 11, 163, …] · (T)</text>
+    <line class="l" x1="300" y1="395" x2="300" y2="440"/>
+    <rect class="b" x="95" y="445" width="410" height="125" rx="18"/><text class="t" x="300" y="492">Embedding</text><text class="s" x="300" y="534">每个 ID → 向量　</text><text class="h" x="430" y="534">(T, D)</text>
+    <line class="l" x1="300" y1="570" x2="300" y2="615"/>
+    <rect class="b" x="95" y="620" width="410" height="125" rx="18"/><text class="t" x="300" y="667">Transformer</text><text class="s" x="300" y="709">混合上下文信息　</text><text class="h" x="440" y="709">(T, D)</text>
+    <line class="l" x1="300" y1="745" x2="300" y2="790"/>
+    <rect class="b" x="95" y="795" width="410" height="105" rx="18"/><text class="t" x="300" y="840">Logits</text><text class="h" x="300" y="878">候选分数 · (T, V)</text>
+    <line class="l" x1="300" y1="900" x2="300" y2="940"/>
+    <rect class="f" x="55" y="945" width="490" height="70" rx="18"/><text class="t" x="300" y="990">下一个 token 的概率</text>
+  </g>
+</svg>

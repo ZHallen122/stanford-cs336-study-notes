@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">CS336 全课程学习地图</title>
+  <desc id="desc">课程从文本与 tokenizer 开始，依次进入模型架构、训练系统、扩展规律、数据与评估，最后到后训练与对齐。作业一到五分别覆盖这些阶段。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#52706a"/>
+    </marker>
+    <style>
+      .bg{fill:#fbfaf6}.node{fill:#fff;stroke:#b8cac5;stroke-width:3}.active{fill:#dff1ec;stroke:#176b61;stroke-width:4}.late{fill:#fff0dd;stroke:#c86f24;stroke-width:3}.line{stroke:#52706a;stroke-width:4;fill:none;marker-end:url(#arrow)}.title{font:700 32px system-ui,sans-serif;fill:#16221f}.label{font:700 25px system-ui,sans-serif;fill:#16221f}.sub{font:400 20px system-ui,sans-serif;fill:#53635f}.badge{font:700 18px system-ui,sans-serif;fill:#176b61}
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="430" rx="28"/>
+  <text class="title" x="55" y="62">从原始文本到可用的语言模型</text>
+
+  <path class="line" d="M225 170 H315"/><path class="line" d="M505 170 H595"/><path class="line" d="M785 170 H875"/>
+  <path class="line" d="M970 240 V285 H225"/>
+  <path class="line" d="M315 345 H405"/><path class="line" d="M595 345 H685"/><path class="line" d="M875 345 H965"/>
+
+  <rect class="active" x="35" y="105" width="190" height="130" rx="20"/>
+  <text class="label" x="130" y="157" text-anchor="middle">文本</text><text class="sub" x="130" y="194" text-anchor="middle">语料与字节</text>
+  <text class="badge" x="130" y="222" text-anchor="middle">Lecture 01</text>
+
+  <rect class="active" x="315" y="105" width="190" height="130" rx="20"/>
+  <text class="label" x="410" y="157" text-anchor="middle">Tokenizer</text><text class="sub" x="410" y="194" text-anchor="middle">文本 ↔ token ID</text>
+  <text class="badge" x="410" y="222" text-anchor="middle">A1</text>
+
+  <rect class="node" x="595" y="105" width="190" height="130" rx="20"/>
+  <text class="label" x="690" y="157" text-anchor="middle">模型架构</text><text class="sub" x="690" y="194" text-anchor="middle">Transformer / MoE</text>
+
+  <rect class="node" x="875" y="105" width="190" height="130" rx="20"/>
+  <text class="label" x="970" y="157" text-anchor="middle">训练系统</text><text class="sub" x="970" y="194" text-anchor="middle">GPU / 并行 / Triton</text>
+  <text class="badge" x="970" y="222" text-anchor="middle">A2</text>
+
+  <rect class="node" x="125" y="285" width="190" height="120" rx="20"/>
+  <text class="label" x="220" y="337" text-anchor="middle">扩展规律</text><text class="sub" x="220" y="374" text-anchor="middle">Scaling laws</text>
+  <text class="badge" x="220" y="399" text-anchor="middle">A3</text>
+
+  <rect class="node" x="405" y="285" width="190" height="120" rx="20"/>
+  <text class="label" x="500" y="337" text-anchor="middle">推理与评估</text><text class="sub" x="500" y="374" text-anchor="middle">Inference / Eval</text>
+
+  <rect class="node" x="685" y="285" width="190" height="120" rx="20"/>
+  <text class="label" x="780" y="337" text-anchor="middle">数据</text><text class="sub" x="780" y="374" text-anchor="middle">清洗 / 去重 / 混合</text>
+  <text class="badge" x="780" y="399" text-anchor="middle">A4</text>
+
+  <rect class="late" x="965" y="285" width="200" height="120" rx="20"/>
+  <text class="label" x="1065" y="337" text-anchor="middle">后训练与对齐</text><text class="sub" x="1065" y="374" text-anchor="middle">SFT / RL / Safety</text>
+  <text class="badge" x="1065" y="399" text-anchor="middle">A5</text>
+</svg>

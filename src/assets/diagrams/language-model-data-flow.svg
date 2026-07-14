@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">语言模型的数据流</title>
+  <desc id="desc">输入文本被 tokenizer 转为形状为 T 的 token ID；embedding 转为 T 乘 D 的向量；Transformer 继续保持 T 乘 D；输出层生成 T 乘 V 的 logits；softmax 产生下一个 token 的概率。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#52706a"/></marker>
+    <style>
+      .bg{fill:#fbfaf6}.box{fill:#fff;stroke:#b8cac5;stroke-width:3}.focus{fill:#dff1ec;stroke:#176b61;stroke-width:4}.line{stroke:#52706a;stroke-width:4;fill:none;marker-end:url(#arrow)}.title{font:700 32px system-ui,sans-serif;fill:#16221f}.label{font:700 25px system-ui,sans-serif;fill:#16221f}.sub{font:400 20px system-ui,sans-serif;fill:#53635f}.shape{font:700 20px ui-monospace,monospace;fill:#176b61}.note{font:400 19px system-ui,sans-serif;fill:#53635f}
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="520" rx="28"/>
+  <text class="title" x="55" y="62">一次前向计算：每一步都问输入、输出和 shape</text>
+  <path class="line" d="M235 230H280"/><path class="line" d="M490 230H535"/><path class="line" d="M745 230H790"/><path class="line" d="M1000 230H1040"/>
+
+  <rect class="box" x="30" y="145" width="205" height="170" rx="20"/>
+  <text class="label" x="132" y="196" text-anchor="middle">输入文本</text><text class="sub" x="132" y="236" text-anchor="middle">“Hello, 猫!”</text><text class="shape" x="132" y="278" text-anchor="middle">string</text>
+
+  <rect class="focus" x="280" y="145" width="210" height="170" rx="20"/>
+  <text class="label" x="385" y="196" text-anchor="middle">Token IDs</text><text class="sub" x="385" y="236" text-anchor="middle">[15496, 11, 163, …]</text><text class="shape" x="385" y="278" text-anchor="middle">(T)</text>
+
+  <rect class="box" x="535" y="145" width="210" height="170" rx="20"/>
+  <text class="label" x="640" y="196" text-anchor="middle">Embedding</text><text class="sub" x="640" y="236" text-anchor="middle">每个 ID → 向量</text><text class="shape" x="640" y="278" text-anchor="middle">(T, D)</text>
+
+  <rect class="box" x="790" y="145" width="210" height="170" rx="20"/>
+  <text class="label" x="895" y="196" text-anchor="middle">Transformer</text><text class="sub" x="895" y="236" text-anchor="middle">混合上下文信息</text><text class="shape" x="895" y="278" text-anchor="middle">(T, D)</text>
+
+  <rect class="box" x="1040" y="145" width="130" height="170" rx="20"/>
+  <text class="label" x="1105" y="196" text-anchor="middle">Logits</text><text class="sub" x="1105" y="236" text-anchor="middle">候选分数</text><text class="shape" x="1105" y="278" text-anchor="middle">(T, V)</text>
+
+  <path class="line" d="M1105 315V370H895"/>
+  <rect class="focus" x="690" y="365" width="410" height="115" rx="20"/>
+  <text class="label" x="895" y="410" text-anchor="middle">Softmax → 下一个 token 的概率</text>
+  <text class="note" x="895" y="449" text-anchor="middle">训练：与正确答案算 loss　·　推理：选择下一个 token</text>
+</svg>

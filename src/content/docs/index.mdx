@@ -1,0 +1,59 @@
+---
+title: CS336 · 从零学语言模型
+description: 写给没有 AI 背景的软件工程师的 Stanford CS336 学习笔记
+template: splash
+hero:
+  tagline: 不假设你学过机器学习。我们从熟悉的软件工程心智模型出发，逐步理解 tokenizer、Transformer、训练系统与对齐。
+  actions:
+    - text: 从这里开始
+      link: ./start-here/
+      icon: right-arrow
+      variant: primary
+    - text: 查看学习地图
+      link: ./start-here/roadmap/
+      icon: open-book
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+import courseMap from '../../assets/diagrams/course-map.svg';
+import courseMapMobile from '../../assets/diagrams/course-map-mobile.svg';
+
+## 你不需要先“懂 AI”
+
+如果你会写 Python、理解常见的数据结构和服务架构，就已经有了一个很好的起点。遇到线性代数、概率或 GPU 概念时，这份笔记会先解释“它解决什么问题”，再解释公式。
+
+<figure class="teaching-figure">
+  <picture>
+    <source media="(max-width: 40rem)" srcset={courseMapMobile.src} />
+    <img src={courseMap.src} width={courseMap.width} height={courseMap.height} alt="CS336 学习地图：从文本和 tokenizer 开始，依次学习模型架构、训练系统、扩展规律、推理评估、数据，最后进入后训练与对齐。" />
+  </picture>
+  <figcaption>第一遍只需要看清主线；每个模块的细节会在对应讲义中展开。</figcaption>
+</figure>
+
+<CardGrid>
+  <Card title="先建立地图" icon="seti:map">
+    每一章先给出它在完整语言模型系统中的位置、输入输出，以及与 SDE 已有知识的对应关系。
+  </Card>
+  <Card title="术语不拦路" icon="information">
+    新术语首次出现时可直接查看短解释；需要深入时再进入术语库，不必打断当前阅读。
+  </Card>
+  <Card title="按自己的节奏读" icon="setting">
+    右下角“阅读设置”可调整字号、正文宽度、段落间距与动效，并会记住你的选择。
+  </Card>
+  <Card title="内容容易维护" icon="document">
+    讲义是 Markdown/MDX。统一模板明确标出目标、前置知识、心智模型、代码、检查点和延伸阅读。
+  </Card>
+</CardGrid>
+
+## 三条入口
+
+| 你的情况 | 建议入口 | 说明 |
+| --- | --- | --- |
+| 完全没接触过 AI / ML | [学习路线图](./start-here/roadmap/) | 先补最小前置知识，再进入课程 |
+| 懂一些深度学习，想跟课 | [Lecture 01](./lessons/01-tokenization/) | 按 Stanford 的 lecture 顺序阅读 |
+| 正在做 assignment | [作业路线](./assignments/) | 先看依赖、里程碑与调试策略，不提供可提交答案 |
+
+:::note[非官方笔记]
+本站不是 Stanford 官方课程网站。课程安排、讲义与作业要求请以 [CS336 官网](https://cs336.stanford.edu/) 为准。
+:::

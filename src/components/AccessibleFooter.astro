@@ -1,0 +1,77 @@
+---
+import Default from '@astrojs/starlight/components/Footer.astro';
+---
+
+<Default><slot /></Default>
+
+<aside class="reading-tools" aria-label="阅读显示设置">
+  <button class="reading-tools__trigger" type="button" aria-controls="reading-tools-panel">
+    <span aria-hidden="true">Aa</span>
+    <span>阅读设置</span>
+  </button>
+  <div class="reading-tools__panel" id="reading-tools-panel">
+    <p class="reading-tools__title">让文字更容易读</p>
+    <div class="reading-tools__actions" role="group" aria-label="文字大小">
+      <button type="button" data-reading-action="smaller" aria-label="缩小正文">A−</button>
+      <button type="button" data-reading-action="larger" aria-label="放大正文">A＋</button>
+    </div>
+    <label>
+      <input type="checkbox" data-reading-toggle="focus" />
+      高可读模式
+    </label>
+    <label>
+      <input type="checkbox" data-reading-toggle="wide" />
+      加宽正文
+    </label>
+    <label>
+      <input type="checkbox" data-reading-toggle="motion" />
+      减少动效
+    </label>
+    <button class="reading-tools__reset" type="button" data-reading-action="reset">恢复默认</button>
+  </div>
+</aside>
+
+<script is:inline>
+  (() => {
+    const storageKey = 'cs336-reading-preferences';
+    const root = document.documentElement;
+    const tools = document.querySelector('.reading-tools');
+    if (!tools) return;
+
+    const toggles = tools.querySelectorAll('[data-reading-toggle]');
+    const defaults = { scale: 1, focus: false, wide: false, motion: false };
+
+    const load = () => {
+      try { return { ...defaults, ...JSON.parse(localStorage.getItem(storageKey) || '{}') }; }
+      catch { return { ...defaults }; }
+    };
+    let prefs = load();
+
+    const apply = () => {
+      root.style.setProperty('--reader-scale', String(prefs.scale));
+      root.classList.toggle('reader-focus', prefs.focus);
+      root.classList.toggle('reader-wide', prefs.wide);
+      root.classList.toggle('reader-reduce-motion', prefs.motion);
+      toggles.forEach((input) => { input.checked = Boolean(prefs[input.dataset.readingToggle]); });
+      try { localStorage.setItem(storageKey, JSON.stringify(prefs)); } catch {}
+    };
+
+    tools.addEventListener('click', (event) => {
+      const action = event.target.closest('[data-reading-action]')?.dataset.readingAction;
+      if (!action) return;
+      if (action === 'larger') prefs.scale = Math.min(1.25, +(prefs.scale + 0.1).toFixed(2));
+      if (action === 'smaller') prefs.scale = Math.max(0.9, +(prefs.scale - 0.1).toFixed(2));
+      if (action === 'reset') prefs = { ...defaults };
+      apply();
+    });
+
+    tools.addEventListener('change', (event) => {
+      const key = event.target.dataset?.readingToggle;
+      if (!key) return;
+      prefs[key] = event.target.checked;
+      apply();
+    });
+
+    apply();
+  })();
+</script>

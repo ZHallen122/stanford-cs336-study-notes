@@ -1,0 +1,18 @@
+---
+interface Props {
+  term: string;
+  definition: string;
+  slug?: string;
+}
+
+const { term, definition, slug = term.toLowerCase().replaceAll(' ', '-') } = Astro.props;
+const glossaryUrl = `${import.meta.env.BASE_URL}reference/glossary/#${slug}`;
+---
+
+<span class="term">
+  <dfn tabindex="0" aria-describedby={`term-${slug}`}>{term}</dfn>
+  <span class="term__popover" role="tooltip" id={`term-${slug}`}>
+    {definition}
+    <a href={glossaryUrl}>查看术语库</a>
+  </span>
+</span>

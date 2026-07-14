@@ -1,0 +1,51 @@
+---
+title: 给 SDE 的概念地图
+description: 用熟悉的软件系统结构理解语言模型从数据到输出的完整路径。
+---
+
+import Term from '../../../components/Term.astro';
+import dataFlow from '../../../assets/diagrams/language-model-data-flow.svg';
+import dataFlowMobile from '../../../assets/diagrams/language-model-data-flow-mobile.svg';
+
+## 一句话版本
+
+语言模型接收一串离散 ID，反复通过参数化的数值计算预测下一个 ID；训练就是根据预测错误，调整这些参数。
+
+<figure class="teaching-figure">
+  <picture>
+    <source media="(max-width: 40rem)" srcset={dataFlowMobile.src} />
+    <img src={dataFlow.src} width={dataFlow.width} height={dataFlow.height} alt="语言模型数据流：输入文本经过 tokenizer 得到形状 T 的 token ID，embedding 变成 T×D，Transformer 输出仍为 T×D，输出层生成 T×V 的 logits，最后得到下一个 token 的概率。" />
+  </picture>
+  <figcaption><code>T</code> 是序列长度，<code>D</code> 是模型维度，<code>V</code> 是词表大小。</figcaption>
+</figure>
+
+## 从 Web 服务映射到语言模型
+
+| 软件系统概念 | 语言模型中的近似对应 | 需要警惕的差别 |
+| --- | --- | --- |
+| 请求解析 | tokenizer | token 边界不是业务字段边界 |
+| 内部数据结构 | tensor | shape 是类型的一部分，却常在运行时才暴露错误 |
+| 可配置程序 | model + weights | “程序行为”主要存进大量浮点参数 |
+| 测试指标 | loss / evaluation metric | 单个指标无法覆盖真实能力 |
+| 编译与执行优化 | kernel fusion / mixed precision | 数值精度会改变结果 |
+| 横向扩展 | distributed training | 节点之间还要同步梯度或参数 |
+
+## 数据怎样流动
+
+原始文本先由 <Term term="tokenizer" slug="tokenizer" definition="把文本编码为 token ID，并把 ID 解码回文本的规则与实现。">tokenizer</Term> 转成整数 ID。ID 经过 embedding 变成向量，Transformer 在上下文中组合这些向量，最后输出每个候选 token 的分数。
+
+训练时，我们用正确的下一个 token 计算 <Term term="loss" slug="loss" definition="衡量模型预测与目标差距的标量；训练会尝试降低它。">loss</Term>，再通过反向传播得到每个参数应该如何变化。
+
+:::caution[模型不是数据库]
+参数中包含从数据学到的统计模式，但不能把它当作可精确寻址、可追踪来源的事实存储。
+:::
+
+## 先保留的五个问题
+
+学习任何新组件时都问：
+
+1. 输入和输出分别是什么？shape 是什么？
+2. 它有没有可学习参数？
+3. 训练时和推理时行为是否不同？
+4. 时间与显存成本随哪个维度增长？
+5. 失败时能观察到什么？

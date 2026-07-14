@@ -1,0 +1,92 @@
+---
+title: 01 · Overview & Tokenization
+description: 理解语言模型为什么需要 token，以及 BPE tokenizer 在工程上做了什么取舍。
+---
+
+import Term from '../../../components/Term.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
+import tokenizationComparison from '../../../assets/diagrams/tokenization-comparison.svg';
+import tokenizationComparisonMobile from '../../../assets/diagrams/tokenization-comparison-mobile.svg';
+
+<Aside type="note" title="本节状态">结构与入门内容已完成；后续会继续对照 2026 lecture material 补充推导与实验。</Aside>
+
+## 这节解决什么问题
+
+神经网络接收数字，不直接接收字符串。我们需要一个稳定、可逆且规模可控的编码层，把文本变成整数序列。
+
+```text
+"unbelievable!"
+       ↓ tokenizer.encode
+[359, 4127, 0]
+       ↓ model
+下一 token 的分数
+```
+
+当前主线位置：**原始文本 → tokenization → Transformer → loss → 参数更新**。
+
+## 给 SDE 的心智模型
+
+可以把 tokenizer 看成编译器前端的一部分：它把外部文本转换成模型的内部表示。但它不像普通 lexer 那样依赖固定语法规则；许多 tokenizer 从语料统计中学习常见片段。
+
+<Term term="vocabulary" slug="vocabulary" definition="tokenizer 能识别并映射到 ID 的全部 token 集合。">Vocabulary</Term> 类似符号表。词表越大，序列通常越短，但 embedding 和输出层更大；词表越小，模型组件更小，但同一段文本会变成更多 token。
+
+## 为什么不直接按字符或单词切分
+
+| 方案 | 优点 | 主要问题 |
+| --- | --- | --- |
+| 字符 | 词表小，基本没有未知字符 | 序列很长；单个 token 信息少 |
+| 单词 | 序列短，边界直观 | 词表爆炸；拼写、变形和多语言很难覆盖 |
+| 字节 | 有限词表，可表示任意字节串 | 人类字符可能被拆开；序列偏长 |
+| 子词 / BPE | 在词表大小与序列长度间折中 | token 边界不直观，依赖训练语料 |
+
+<figure class="teaching-figure">
+  <picture>
+    <source media="(max-width: 40rem)" srcset={tokenizationComparisonMobile.src} />
+    <img src={tokenizationComparison.src} width={tokenizationComparison.width} height={tokenizationComparison.height} alt="unbelievable 的三种切分方式：字符级切成 12 个 token，单词级保留一个 token，BPE 示例切成 un、believ、able 三个 token。" />
+  </picture>
+  <figcaption>这只是粒度对比。真实 BPE 的切分结果取决于它训练时看到的语料和目标词表大小。</figcaption>
+</figure>
+
+## BPE 的核心循环
+
+<Steps>
+1. 用最小单位表示训练语料，例如 UTF-8 字节。
+2. 统计所有相邻 token 对出现的次数。
+3. 选择最常见的相邻对，为它创建新 token。
+4. 在语料表示中应用这次合并。
+5. 重复，直到词表达到目标大小。
+</Steps>
+
+:::note[先记住这个]
+BPE 不是在理解词义。它只是在反复压缩高频的相邻模式。
+:::
+
+## 工程不变量
+
+实现 tokenizer 时优先写成测试：
+
+```python
+assert decode(encode(text)) == text
+```
+
+还要覆盖：空字符串、非 ASCII 文本、emoji、重复空格、换行、特殊 token，以及训练时从未见过的字节组合。
+
+:::caution[“一个 token 就是一个词”]
+这是最常见的错误直觉。token 可能是一个词、一段词、标点、空格组合，甚至单个字节；具体边界由 tokenizer 决定。
+:::
+
+## 理解检查
+
+不看上文，用自己的话回答：
+
+1. 为什么词表大小和序列长度之间存在取舍？
+2. 为什么 byte-level tokenizer 通常不会出现无法编码的 Unicode 文本？
+3. BPE 选择下一次 merge 时需要哪项统计？
+4. `decode(encode(x)) == x` 为什么重要？
+
+## 官方材料
+
+- [CS336 课程主页](https://cs336.stanford.edu/)
+- [2026 Lecture 01 材料](https://cs336.stanford.edu/)
+
+课程资料与要求可能更新，请以官网为准。

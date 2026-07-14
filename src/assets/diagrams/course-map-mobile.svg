@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 1250" role="img" aria-labelledby="title desc">
+  <title id="title">CS336 学习地图手机版</title><desc id="desc">从上到下依次为文本与 tokenizer、模型架构、训练系统、扩展规律、推理评估、数据、后训练与对齐。</desc>
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#52706a"/></marker><style>.bg{fill:#fbfaf6}.b{fill:#fff;stroke:#b8cac5;stroke-width:3}.f{fill:#dff1ec;stroke:#176b61;stroke-width:4}.z{fill:#fff0dd;stroke:#c86f24;stroke-width:3}.l{stroke:#52706a;stroke-width:4;marker-end:url(#a)}.t{font:700 30px system-ui,sans-serif;fill:#16221f}.s{font:400 23px system-ui,sans-serif;fill:#53635f}.a{font:700 21px system-ui,sans-serif;fill:#176b61}</style></defs>
+  <rect class="bg" width="600" height="1250" rx="28"/><text class="t" x="300" y="58" text-anchor="middle">从文本到可用的语言模型</text>
+  <g text-anchor="middle">
+    <rect class="f" x="80" y="92" width="440" height="115" rx="18"/><text class="t" x="300" y="137">文本与 Tokenizer</text><text class="s" x="300" y="174">语料 → token ID</text><text class="a" x="465" y="194">Lecture 01 · A1</text>
+    <line class="l" x1="300" y1="207" x2="300" y2="250"/>
+    <rect class="b" x="80" y="255" width="440" height="110" rx="18"/><text class="t" x="300" y="300">模型架构</text><text class="s" x="300" y="338">Transformer / MoE</text>
+    <line class="l" x1="300" y1="365" x2="300" y2="408"/>
+    <rect class="b" x="80" y="413" width="440" height="110" rx="18"/><text class="t" x="300" y="458">训练系统</text><text class="s" x="300" y="496">GPU / 并行 / Triton · A2</text>
+    <line class="l" x1="300" y1="523" x2="300" y2="566"/>
+    <rect class="b" x="80" y="571" width="440" height="110" rx="18"/><text class="t" x="300" y="616">扩展规律</text><text class="s" x="300" y="654">Scaling laws · A3</text>
+    <line class="l" x1="300" y1="681" x2="300" y2="724"/>
+    <rect class="b" x="80" y="729" width="440" height="110" rx="18"/><text class="t" x="300" y="774">推理与评估</text><text class="s" x="300" y="812">Inference / Evaluation</text>
+    <line class="l" x1="300" y1="839" x2="300" y2="882"/>
+    <rect class="b" x="80" y="887" width="440" height="110" rx="18"/><text class="t" x="300" y="932">数据</text><text class="s" x="300" y="970">清洗 / 去重 / 混合 · A4</text>
+    <line class="l" x1="300" y1="997" x2="300" y2="1040"/>
+    <rect class="z" x="80" y="1045" width="440" height="130" rx="18"/><text class="t" x="300" y="1093">后训练与对齐</text><text class="s" x="300" y="1133">SFT / RL / Safety · A5</text><text class="a" x="300" y="1162">把基础模型变成可交互系统</text>
+  </g>
+</svg>

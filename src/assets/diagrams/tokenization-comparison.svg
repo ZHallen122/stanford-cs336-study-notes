@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 540" role="img" aria-labelledby="title desc">
+  <title id="title">三种 tokenization 粒度对比</title>
+  <desc id="desc">同一个单词 unbelievable 按字符会得到十二个短 token，按单词得到一个 token，按子词 BPE 得到 un、believ 和 able 三个 token。字符方案词表小但序列长，单词方案序列短但词表很大，BPE 在两者之间折中。</desc>
+  <defs>
+    <style>
+      .bg{fill:#fbfaf6}.row{fill:#fff;stroke:#c7d3d0;stroke-width:3}.chip{fill:#dff1ec;stroke:#176b61;stroke-width:2}.word{fill:#fff0dd;stroke:#c86f24;stroke-width:2}.title{font:700 32px system-ui,sans-serif;fill:#16221f}.label{font:700 25px system-ui,sans-serif;fill:#16221f}.token{font:700 22px ui-monospace,monospace;fill:#16221f}.trade{font:400 20px system-ui,sans-serif;fill:#53635f}.arrow{font:700 27px system-ui,sans-serif;fill:#176b61}
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="540" rx="28"/>
+  <text class="title" x="55" y="62">同一个输入，不同的切分粒度</text>
+  <text class="label" x="65" y="125">输入</text><text class="token" x="210" y="125">unbelievable</text>
+
+  <rect class="row" x="40" y="160" width="1120" height="100" rx="18"/>
+  <text class="label" x="65" y="218">字符</text>
+  <g transform="translate(210 182)">
+    <rect class="chip" width="48" height="52" rx="10"/><text class="token" x="24" y="34" text-anchor="middle">u</text>
+    <rect class="chip" x="58" width="48" height="52" rx="10"/><text class="token" x="82" y="34" text-anchor="middle">n</text>
+    <rect class="chip" x="116" width="48" height="52" rx="10"/><text class="token" x="140" y="34" text-anchor="middle">b</text>
+    <rect class="chip" x="174" width="48" height="52" rx="10"/><text class="token" x="198" y="34" text-anchor="middle">e</text>
+    <rect class="chip" x="232" width="48" height="52" rx="10"/><text class="token" x="256" y="34" text-anchor="middle">l</text>
+    <rect class="chip" x="290" width="48" height="52" rx="10"/><text class="token" x="314" y="34" text-anchor="middle">i</text>
+    <rect class="chip" x="348" width="48" height="52" rx="10"/><text class="token" x="372" y="34" text-anchor="middle">e</text>
+    <rect class="chip" x="406" width="48" height="52" rx="10"/><text class="token" x="430" y="34" text-anchor="middle">v</text>
+    <rect class="chip" x="464" width="48" height="52" rx="10"/><text class="token" x="488" y="34" text-anchor="middle">a</text>
+    <rect class="chip" x="522" width="48" height="52" rx="10"/><text class="token" x="546" y="34" text-anchor="middle">b</text>
+    <rect class="chip" x="580" width="48" height="52" rx="10"/><text class="token" x="604" y="34" text-anchor="middle">l</text>
+    <rect class="chip" x="638" width="48" height="52" rx="10"/><text class="token" x="662" y="34" text-anchor="middle">e</text>
+  </g>
+  <text class="trade" x="940" y="204">词表小</text><text class="trade" x="940" y="234">序列长</text>
+
+  <rect class="row" x="40" y="280" width="1120" height="100" rx="18"/>
+  <text class="label" x="65" y="338">单词</text>
+  <rect class="word" x="210" y="302" width="245" height="52" rx="10"/><text class="token" x="332" y="336" text-anchor="middle">unbelievable</text>
+  <text class="trade" x="940" y="324">序列短</text><text class="trade" x="940" y="354">词表巨大</text>
+
+  <rect class="row" x="40" y="400" width="1120" height="100" rx="18"/>
+  <text class="label" x="65" y="458">BPE</text>
+  <rect class="chip" x="210" y="422" width="95" height="52" rx="10"/><text class="token" x="257" y="456" text-anchor="middle">un</text>
+  <text class="arrow" x="322" y="458">+</text>
+  <rect class="chip" x="357" y="422" width="150" height="52" rx="10"/><text class="token" x="432" y="456" text-anchor="middle">believ</text>
+  <text class="arrow" x="524" y="458">+</text>
+  <rect class="chip" x="559" y="422" width="120" height="52" rx="10"/><text class="token" x="619" y="456" text-anchor="middle">able</text>
+  <text class="trade" x="940" y="444">折中方案</text><text class="trade" x="940" y="474">由语料学得</text>
+</svg>
