@@ -1,4 +1,5 @@
 :root {
+  --sl-content-width: 56rem;
   --sl-color-accent-low: #d9eee9;
   --sl-color-accent: #176b61;
   --sl-color-accent-high: #103f3a;
@@ -11,9 +12,10 @@
   --sl-color-gray-6: #f2f4f2;
   --sl-color-black: #fbfaf6;
   --reader-scale: 1;
-  --reader-measure: 46rem;
+  --reader-measure: 52rem;
   --reader-leading: 1.78;
   --reader-tracking: 0.006em;
+  --toc-panel-width: clamp(16rem, 18vw, 19rem);
 }
 
 :root[data-theme='dark'] {
@@ -154,6 +156,87 @@ body {
    Let this fixed control participate in the page-level stacking order. */
 .main-pane:has(.reading-tools) {
   isolation: auto;
+}
+
+.toc-collapse-toggle {
+  width: calc(100% - 2 * var(--sl-sidebar-pad-x));
+  min-height: 2.5rem;
+  margin: 0.75rem var(--sl-sidebar-pad-x) 0;
+  padding: 0.45rem 0.65rem;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  color: var(--sl-color-gray-2);
+  background: transparent;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 0.55rem;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--sl-text-xs);
+}
+
+.toc-collapse-toggle:hover,
+.toc-collapse-toggle:focus-visible {
+  color: var(--sl-color-white);
+  border-color: var(--sl-color-accent);
+}
+
+.toc-collapse-toggle:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--sl-color-accent) 30%, transparent);
+  outline-offset: 2px;
+}
+
+.toc-collapse-toggle svg {
+  flex: 0 0 auto;
+  transition: transform 160ms ease;
+}
+
+@media (min-width: 72rem) {
+  [data-has-toc] .right-sidebar-container {
+    flex: 0 0 var(--toc-panel-width);
+    width: var(--toc-panel-width);
+  }
+
+  [data-has-toc] .right-sidebar {
+    width: var(--toc-panel-width);
+  }
+
+  [data-has-sidebar][data-has-toc] .main-pane {
+    width: calc(100% - var(--toc-panel-width));
+    --sl-content-margin-inline: auto;
+  }
+
+  html[data-toc-collapsed='true'] {
+    --toc-panel-width: 3.5rem;
+  }
+
+  html[data-toc-collapsed='true'] .right-sidebar {
+    overflow: hidden;
+  }
+
+  html[data-toc-collapsed='true'] .right-sidebar-panel {
+    display: none !important;
+  }
+
+  html[data-toc-collapsed='true'] .toc-collapse-toggle {
+    width: 2.5rem;
+    margin-inline: auto;
+    padding-inline: 0;
+    justify-content: center;
+  }
+
+  html[data-toc-collapsed='true'] .toc-collapse-toggle svg {
+    transform: rotate(180deg);
+  }
+
+  html[data-toc-collapsed='true'] .toc-collapse-toggle span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
 .reading-tools {

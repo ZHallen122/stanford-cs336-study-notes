@@ -26,7 +26,8 @@ export default defineConfig({
       favicon: '/favicon.svg',
       customCss: ['katex/dist/katex.min.css', './src/styles/custom.css'],
       components: {
-        Footer: './src/components/AccessibleFooter.astro'
+        Footer: './src/components/AccessibleFooter.astro',
+        PageSidebar: './src/components/CollapsiblePageSidebar.astro'
       },
       social: [
         {

@@ -1,0 +1,60 @@
+---
+import Default from '@astrojs/starlight/components/PageSidebar.astro';
+---
+
+<div class="toc-shell">
+  <button
+    class="toc-collapse-toggle sl-hidden lg:sl-flex"
+    type="button"
+    aria-controls="starlight__on-this-page"
+    aria-expanded="true"
+    aria-label="收起本页内容"
+    title="收起本页内容"
+    data-toc-collapse-toggle
+  >
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
+      <path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
+    </svg>
+    <span>收起本页内容</span>
+  </button>
+  <Default />
+</div>
+
+<script is:inline>
+  (() => {
+    const storageKey = 'cs336-toc-collapsed';
+    const root = document.documentElement;
+    const toggle = document.querySelector('[data-toc-collapse-toggle]');
+    if (!toggle || toggle.dataset.ready === 'true') return;
+    toggle.dataset.ready = 'true';
+
+    const load = () => {
+      try { return localStorage.getItem(storageKey) === 'true'; }
+      catch { return false; }
+    };
+
+    const apply = (collapsed) => {
+      root.dataset.tocCollapsed = String(collapsed);
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      const label = collapsed ? '展开本页内容' : '收起本页内容';
+      toggle.setAttribute('aria-label', label);
+      toggle.setAttribute('title', label);
+      const visibleLabel = toggle.querySelector('span');
+      if (visibleLabel) visibleLabel.textContent = label;
+      try { localStorage.setItem(storageKey, String(collapsed)); } catch {}
+    };
+
+    toggle.addEventListener('click', () => {
+      apply(root.dataset.tocCollapsed !== 'true');
+    });
+
+    toggle.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      apply(root.dataset.tocCollapsed !== 'true');
+    });
+
+    apply(load());
+  })();
+</script>
+
