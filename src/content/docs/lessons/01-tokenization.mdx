@@ -34,6 +34,12 @@ import tokenizationComparisonMobile from '../../../assets/diagrams/tokenization-
 
 当前主线位置：**原始文本 → tokenization → Transformer → loss → 参数更新**。
 
+## 开始前需要知道
+
+- 建议先浏览[给 SDE 的概念地图](../../foundations/concept-map/)，认识 tokenization 在整条语言模型流水线中的位置。
+- 如果概率和对数已经生疏，可以按需查看[数学最小集](../../foundations/math/)的“概率与对数”；第一次阅读不需要推导公式。
+- 不需要提前学习 PyTorch、Unicode、UTF-8 或 BPE。本讲会从 Python `str` 与 `bytes` 开始原地解释。
+
 :::tip[建议阅读方式]
 第一次先读到“BPE 的一句话版本”和最后的小结。第二次再回来执行代码和手算 merge。不要试图一次记住所有 ID。
 :::

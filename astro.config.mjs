@@ -50,7 +50,7 @@ export default defineConfig({
           ]
         },
         {
-          label: 'AI 前置知识',
+          label: '基础知识 · 按需补齐',
           collapsed: false,
           items: [
             { label: '给 SDE 的概念地图', slug: 'foundations/concept-map' },

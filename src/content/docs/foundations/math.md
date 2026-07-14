@@ -3,6 +3,11 @@ title: 数学最小集
 description: CS336 中反复出现的线性代数、微积分与概率概念，强调含义而非证明。
 ---
 
+## 会在哪些课程里用到
+
+- [Lecture 1 · Overview & Tokenization](../../lessons/01-tokenization/)：读取序列概率分解，并理解为什么语言模型预测下一个 token 的概率。
+- 后续涉及 loss、gradient、normalization 或 scaling law 时，会继续补充对应小节和回链。
+
 ## 阅读公式的顺序
 
 看到公式时，不要先逐字符解析。按这个顺序：

@@ -95,6 +95,19 @@ Use the existing template rather than inventing a new structure for each page.
 - Provide optional details using callouts or native `<details>` when hiding them does not block the main learning path.
 - Never hide essential instructions or safety information behind expandable controls.
 
+## Living foundations workflow
+
+Treat `foundations/` as a just-in-time knowledge layer that grows with the lectures, not as a textbook readers must finish before starting the course.
+
+- Every substantial lecture note should include a short "开始前需要知道" section near the beginning.
+- Link only the concepts that materially help with that lecture, and mark optional refreshers as optional.
+- Explain a concept briefly at its first use so readers can continue without leaving the lecture page.
+- Promote a concept to `foundations/` when it is structural, needs a longer explanation, or will be reused across multiple lectures.
+- Put short lookup definitions in `reference/glossary.md`; do not create a foundation page for every new term.
+- Each foundation page should say which lectures or assignments use it and link back to them.
+- After completing a lecture, audit its new concepts and update the prerequisite links, foundations pages, glossary, and backlinks together.
+- Avoid duplicating the same full explanation in a lecture, a foundation page, and the glossary. Give each location a clear depth and purpose.
+
 ## Terminology
 
 - Keep the English term because code, papers, and error messages use English.

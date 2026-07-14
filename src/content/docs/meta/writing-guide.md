@@ -111,6 +111,19 @@ import dataFlow from '../../../assets/diagrams/language-model-data-flow.svg';
 
 明确区分：课程官方事实、笔记作者的解释、个人实验结果和延伸材料。引用课程资料时链接原始来源；不要复制大段受版权保护内容。
 
+## 基础知识按需补齐
+
+`foundations/` 是随课程一起生长的知识层，不是要求读者开课前读完的教材。每篇 lecture note 在开头提供“开始前需要知道”，只列出当前讲真正会用到的概念。
+
+遇到新概念时按下面的顺序处理：
+
+1. 首次出现时先用一两句话原地解释，让读者不跳页也能继续。
+2. 如果概念会跨多讲复用、需要较长推导或属于稳定的底层结构，把完整解释放进 `foundations/`。
+3. 如果读者只需要随手查询定义，把它加入 `reference/glossary.md`。
+4. Foundation 页面注明“会在哪些课程或作业中用到”，并链接回对应页面。
+
+完成一讲后，检查新增概念、lecture 的基础链接、Foundation 页面、术语库和双向链接是否同步。不要在三个位置复制同一份长解释。
+
 ## 发布前检查
 
 - 键盘 Tab 可以到达所有交互元素。
@@ -119,3 +132,4 @@ import dataFlow from '../../../assets/diagrams/language-model-data-flow.svg';
 - 只读标题也能理解页面结构。
 - 所有内部链接与构建检查通过。
 - 图片在 320px 宽度下仍可辨认，且 alt text 能独立表达核心关系。
+- 新概念已完成原地解释 / Foundation / Glossary 分流，并补齐需要的回链。
