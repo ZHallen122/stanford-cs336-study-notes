@@ -25,6 +25,10 @@ import Default from '@astrojs/starlight/components/Footer.astro';
       高可读模式
     </label>
     <label>
+      <input type="checkbox" data-reading-toggle="spacing" />
+      加大字距和行距
+    </label>
+    <label>
       <input type="checkbox" data-reading-toggle="wide" />
       加宽正文
     </label>
@@ -48,7 +52,7 @@ import Default from '@astrojs/starlight/components/Footer.astro';
     const trigger = tools.querySelector('.reading-tools__trigger');
     const panel = tools.querySelector('.reading-tools__panel');
     const toggles = tools.querySelectorAll('[data-reading-toggle]');
-    const defaults = { scale: 1, focus: false, wide: false, motion: false };
+    const defaults = { scale: 1, focus: false, spacing: false, wide: false, motion: false };
 
     const setPanelOpen = (open) => {
       if (!trigger || !panel) return;
@@ -79,6 +83,7 @@ import Default from '@astrojs/starlight/components/Footer.astro';
     const apply = () => {
       root.style.setProperty('--reader-scale', String(prefs.scale));
       root.classList.toggle('reader-focus', prefs.focus);
+      root.classList.toggle('reader-spacing', prefs.spacing);
       root.classList.toggle('reader-wide', prefs.wide);
       root.classList.toggle('reader-reduce-motion', prefs.motion);
       toggles.forEach((input) => { input.checked = Boolean(prefs[input.dataset.readingToggle]); });

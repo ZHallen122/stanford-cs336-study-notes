@@ -128,12 +128,14 @@ body {
   --reader-measure: 58rem;
 }
 
-.reader-focus {
+.reader-focus,
+.reader-spacing {
   --reader-leading: 2;
   --reader-tracking: 0.035em;
 }
 
-.reader-focus .sl-markdown-content {
+.reader-focus .sl-markdown-content,
+.reader-spacing .sl-markdown-content {
   word-spacing: 0.08em;
 }
 
