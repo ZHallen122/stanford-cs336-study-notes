@@ -55,14 +55,33 @@ body {
   margin-top: 1.15em;
 }
 
-.sl-markdown-content h2 {
-  margin-top: 2.3em;
-  padding-top: 0.2em;
-  border-top: 1px solid var(--sl-color-gray-5);
+.sl-markdown-content .sl-heading-wrapper.level-h2 {
+  margin-block-start: 4.75rem;
+  padding-block-start: 1.35rem;
+  border-block-start: 0.22rem solid var(--sl-color-accent);
 }
 
-.sl-markdown-content h3 {
-  margin-top: 1.8em;
+.sl-markdown-content .sl-heading-wrapper.level-h2 h2 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: clamp(1.75rem, 4vw, 2rem);
+  font-weight: 760;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+.sl-markdown-content .sl-heading-wrapper.level-h3 {
+  margin-block-start: 2.5rem;
+  padding-inline-start: 0.85rem;
+  border-inline-start: 0.22rem solid var(--sl-color-accent);
+}
+
+.sl-markdown-content .sl-heading-wrapper.level-h3 h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .sl-markdown-content :is(code, kbd) {
