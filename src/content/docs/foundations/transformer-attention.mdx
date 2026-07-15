@@ -1,0 +1,348 @@
+---
+title: Transformer block 与 Attention
+description: 从一次“按相关度读取”开始，理解 Q、K、V、softmax、causal mask、多头注意力和完整 Transformer block 的 shape。
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
+---
+
+import { Aside, Card, CardGrid, Steps } from '@astrojs/starlight/components';
+import attentionDataFlow from '../../../assets/diagrams/attention-data-flow.svg';
+
+<Aside type="note" title="这是一块按需补齐的地基">
+不需要先读完本页才能开始课程。如果 Lecture 3 中的 Q、K、V、head、causal mask 或 residual 让你无法继续，就回到这里；第一次只读到“把一次 attention 走完”。
+</Aside>
+
+## 这页解决什么问题
+
+Token ID 经过 embedding 后，已经变成向量，但每个位置仍主要表示自己的 token。语言模型还需要让当前位置读取前文：代词要找指代对象，括号要找配对符号，函数调用要联系前面的定义。
+
+Transformer block 反复做两件事：
+
+1. Attention 在不同 token 位置之间传递信息。
+2. Feed-forward network (FFN) 独立处理每个位置读到的信息。
+
+完成本页后，你应该能沿着 shape 解释一次 attention，并知道 residual、normalization 与 FFN 怎样组成一个 block。你不需要记住完整实现。
+
+当前主线位置：token IDs → embedding → **Transformer blocks** → logits → 下一个 token 概率。
+
+## 会在哪些课程和作业中用到
+
+- [Lecture 3 · Architecture & Hyperparameters](../../lessons/03-architecture-hyperparameters/)：比较 pre-norm、RMSNorm、SwiGLU、RoPE 与 attention 变体。
+- [Lecture 2 · PyTorch 与资源核算](../../lessons/02-pytorch-resources/)：用 tensor、矩阵乘法、FLOPs 和内存理解这些组件的执行成本。
+- [Assignment 1 · Basics 路线](../../assignments/a1/)：为模型组件写 shape contract、最小测试和资源账本。
+- 后续 attention alternatives、kernel、parallelism 与 inference 课程会反复使用 Q/K/V、mask 和 KV cache。
+
+:::caution[作业边界]
+本页解释稳定机制、shape 和不同玩具输入，不提供 Assignment 1 的提交接口或完整实现。做当前作业时，请以[官方 handout](https://github.com/stanford-cs336/assignment1-basics/blob/main/cs336_assignment1_basics.pdf)、测试、Honor Code 和 AI policy 为准。
+:::
+
+## 开始前需要知道
+
+- 会读 Python list，知道矩阵乘法会把两个相等的中间维消去。
+- `B` 是 batch size，`T` 是序列长度，`D` 是每个 token 的向量宽度；可随时查看[符号与形状速查](../../reference/notation/)。
+- 内积、softmax 和均方根都在[数学最小集](../math/)原地解释；第一次阅读可以先接受它们的输入输出。
+- 不需要先会微积分、PyTorch、GPU 或概率论。
+
+## 30 秒心智模型：一次带权读取
+
+可以把 attention 想成一次内存读取：
+
+- Query (Q) 表示“当前位置正在找什么”。
+- Key (K) 表示“每个可读位置提供什么索引线索”。
+- Value (V) 表示“如果读这个位置，实际取回什么内容”。
+
+系统先比较一个 query 与所有 keys，得到相关度分数；softmax 把分数变成总和为 1 的权重；最后按权重混合 values。
+
+:::caution[类比在哪里失效]
+这不是数据库的精确 key lookup。Q、K、V 都是训练学到的连续向量，结果通常混合多个位置，也不能保证对应人类能命名的关系。
+:::
+
+## 先固定输入与输出 contract
+
+设 embedding 或上一层的输出为：
+
+$$
+X \in \mathbb{R}^{B \times T \times D}
+$$
+
+含义是：一批有 `B` 条序列，每条有 `T` 个 token，每个 token 用 `D` 个数字表示。一个标准 Transformer block 接收 `(B, T, D)`，也输出 `(B, T, D)`。
+
+内部数值已经改变，外部 shape 保持不变。这样同一种 block 才能堆叠 `L` 次。
+
+<CardGrid>
+  <Card title="Batch · B">
+    同时处理多少条序列。不同 batch 元素不会通过普通 self-attention 互相读取。
+  </Card>
+  <Card title="Sequence · T">
+    每条序列有多少位置。Attention 在这个维度上建立位置之间的连接。
+  </Card>
+  <Card title="Model width · D">
+    每个位置保存多少个特征。线性投影和 FFN 主要在这个维度上计算。
+  </Card>
+</CardGrid>
+
+## 把一次 Attention 走完
+
+<figure class="teaching-figure">
+  <img src={attentionDataFlow.src} width={attentionDataFlow.width} height={attentionDataFlow.height} alt="Attention 数据流：形状 B×T×D 的输入投影成 Q、K、V，形状均为 B×H×T×d_head；Q 与 K 转置相乘得到 B×H×T×T 分数，加入因果 mask 并经过 softmax 得到权重；权重与 V 相乘，合并 heads 并投影回 B×T×D。" />
+  <figcaption>沿中间主线读：Q/K 产生“读哪里”的权重，V 提供“读到什么”的内容。Score、weight 以及对应的 attention mask 都同时拥有两个 <code>T</code> 维。</figcaption>
+</figure>
+
+### 第 1 步：从 X 生成 Q、K、V
+
+三个可训练线性投影读取同一个 `X`：
+
+$$
+Q = XW_Q, \qquad K = XW_K, \qquad V = XW_V
+$$
+
+先忽略多头时，Q、K、V 都可以看成 `(B, T, D)`。它们来自同一输入，却用不同权重回答不同问题：Q/K 用于匹配，V 用于传递内容。
+
+### 第 2 步：Q 与 K 产生分数
+
+一个 query 与一个 key 的内积越大，表示当前参数认为这两个位置越匹配。把所有位置两两比较，得到：
+
+$$
+S = \frac{QK^T}{\sqrt{d_{head}}}
+$$
+
+单个 head 的 `S` shape 是 `(B, T, T)`。第一个 `T` 选择“谁在发起读取”，第二个 `T` 选择“正在读取哪个位置”。
+
+除以 $\sqrt{d_{head}}$ 是为了控制内积尺度。维度很大时，许多数相加可能让 score 变得很大，使 softmax 过早接近全 0 或全 1。
+
+### 第 3 步：Causal mask 遮住未来
+
+训练 next-token prediction 时，位置 `t` 不能读取 `t+1` 之后的 token，否则模型会偷看答案。Causal mask 在 softmax **之前**把未来位置的 score 设为负无穷：
+
+```text
+可读取位置（行 = query，列 = key）
+
+        0   1   2   3
+query 0 ✓   ×   ×   ×
+query 1 ✓   ✓   ×   ×
+query 2 ✓   ✓   ✓   ×
+query 3 ✓   ✓   ✓   ✓
+```
+
+负无穷经过指数后贡献为 0，因此被遮位置得到 0 权重。Mask 是访问规则，不是模型学习出的偏好。
+
+### 第 4 步：Softmax 把分数变成权重
+
+对 score matrix 的每一行做 softmax：
+
+$$
+A = \operatorname{softmax}(S)
+$$
+
+`A` 与 `S` shape 相同。每个元素非负，每一行总和为 1；它回答“当前 query 应从各个允许位置读取多少比例”。
+
+### 第 5 步：用权重混合 V
+
+最后计算：
+
+$$
+C = AV
+$$
+
+`A: (B, T, T)` 乘 `V: (B, T, d_head)`，中间的 key-position `T` 被消去，结果是 `(B, T, d_head)`。每个 query 位置得到一份按相关度混合的上下文向量。
+
+## 最小数值例子：一个 query 读两个位置
+
+先不考虑 batch、多头和 causal mask。某个 query 对两个已允许位置的分数是：
+
+```text
+scores = [1, 0]
+```
+
+Softmax 后约为：
+
+```text
+weights = [0.731, 0.269]
+```
+
+假设两个 value 是：
+
+```text
+V₁ = [10, 0]
+V₂ = [0, 20]
+```
+
+输出 context 是：
+
+$$
+0.731[10,0] + 0.269[0,20]
+\approx [7.31, 5.38]
+$$
+
+Attention 没有“选中一个答案”；它按权重混合了两个 value。训练会调整生成 Q/K/V 的投影，让这种混合对预测下一个 token 更有用。
+
+## Multi-head：并行使用多组读取规则
+
+单个 attention head 只产生一种匹配与混合方式。Multi-head attention 使用 `H` 组投影，让不同 head 可以学习不同关系，再把结果拼回去。
+
+常见设置满足：
+
+$$
+D = H \times d_{head}
+$$
+
+于是 Q、K、V 会重排为 `(B, H, T, d_head)`。每个 head 独立得到 `(B, T, T)` 权重，输出 `(B, T, d_head)`；拼接 `H` 个 head 后恢复 `(B, T, D)`，再经过输出投影。
+
+:::note[这不是数学硬性要求]
+Lecture 3 会看到 `H × d_head` 不一定必须等于 `D`。这里使用常见设置，是为了先把 shape 主线讲清楚。
+:::
+
+## 从 Attention 到完整 Transformer block
+
+Attention 只负责跨位置通信。一个现代 pre-norm block 还包含 normalization、FFN 和两次 residual addition：
+
+<Steps>
+1. 对输入 `X` 做 normalization，让子层看到受控的数值尺度。
+2. 执行 causal self-attention，把结果加回 `X`。
+3. 对新的 hidden state 再做 normalization。
+4. 每个位置独立执行 FFN，把结果再次加回 residual stream。
+</Steps>
+
+可写成：
+
+$$
+H = X + \operatorname{Attention}(\operatorname{Norm}(X))
+$$
+
+$$
+Y = H + \operatorname{FFN}(\operatorname{Norm}(H))
+$$
+
+Residual addition 要求子层输出与输入 shape 相同。它让每个子层学习“在已有表示上增加什么”，而不是每层从头重建表示。
+
+FFN 对每个位置使用相同参数，通常先把 `D` 扩到更宽的 `d_ff`，再投影回 `D`。它改变每个位置内部的特征，不直接读取其他位置。
+
+## Self-attention、causal 与 cross-attention 不要混淆
+
+| 名称 | Q 来自哪里 | K/V 来自哪里 | 典型访问规则 |
+| --- | --- | --- | --- |
+| Self-attention | 当前序列 | 当前序列 | 可双向，也可 causal |
+| Causal self-attention | 当前序列 | 当前序列 | 只能读取当前位置及过去 |
+| Cross-attention | 一组表示 | 另一组表示 | Query 读取另一序列或模态 |
+
+CS336 的基础语言模型主要使用 causal self-attention。看到“self”只说明 Q/K/V 来源相同，不自动说明有没有 causal mask。
+
+## 训练与生成的路径差异
+
+训练时，一次 forward 可以并行计算序列中所有 query 位置；causal mask 保证每一行只使用允许的前缀。
+
+自回归生成必须先得到 token `t`，才能构造 token `t+1` 的输入。系统通常缓存过去位置已经算出的 K/V，避免每一步重新计算这些历史表示；这就是 KV cache。
+
+KV cache 没有让前缀成本消失。新的 query 仍要读取所有可见的缓存 K/V，并与它们计算 attention；上下文越长，每个生成 step 需要读取的数据通常越多。
+
+KV cache 改变执行成本，不改变 attention 的数学目标。Lecture 3 会继续比较 MHA、GQA 与 MQA 怎样减少生成期需要保存和读取的 K/V。
+
+## 资源成本先看哪个 tensor
+
+在数学定义中，full attention 的 score 和 weight 都有逻辑 shape `(B, H, T, T)`。因此当 `T` 翻倍时，位置配对数和 attention 算术工作量大约变成四倍。
+
+朴素实现会把完整 score/weight 矩阵写入显存；FlashAttention 一类融合 kernel 会分块计算，不在显存中物化完整的 `T × T` 矩阵。它降低中间 activation 的显存和数据搬运，但 exact full attention 的算术复杂度仍是 `O(T²)`。
+
+这不表示 Transformer 的每个组件都是二次成本。Q/K/V 投影、FFN 和许多 activation 对 `T` 通常是线性增长；实际 runtime 还取决于 kernel、memory bandwidth、dtype 和硬件。
+
+## 一个不依赖 PyTorch 的 CPU 实验
+
+下面只用 Python 标准库复现前面的带权读取。它是教学实验，不是 Assignment 1 实现：
+
+```python
+import math
+
+def stable_softmax(values: list[float]) -> list[float]:
+    maximum = max(values)
+    exponentials = [math.exp(value - maximum) for value in values]
+    total = sum(exponentials)
+    return [value / total for value in exponentials]
+
+scores = [1.0, 0.0]
+values = [[10.0, 0.0], [0.0, 20.0]]
+
+weights = stable_softmax(scores)
+context = [
+    sum(weight * value[column] for weight, value in zip(weights, values))
+    for column in range(2)
+]
+
+assert abs(sum(weights) - 1.0) < 1e-9
+assert all(weight >= 0 for weight in weights)
+assert abs(context[0] - 7.3106) < 1e-3
+assert abs(context[1] - 5.3788) < 1e-3
+```
+
+先预测每个 assert 为什么成立，再运行。`maximum` 的减法不会改变 softmax 结果，却能避免大正数直接送进 `exp`。
+
+## 常见误区
+
+### “Attention 就是在挑最重要的 token”
+
+它产生的是当前 query 下的带权读取。不同位置、不同 head 和不同层会有不同权重；权重也不自动等于可靠的人类解释。
+
+### “Softmax 最大的元素就是 1”
+
+Softmax 通常产生平滑分布。只有分数差非常大时，最大权重才会接近 1；它仍可能混合多个 value。
+
+### “Mask 在 softmax 之后把权重清零也一样”
+
+直接清零会让剩余权重之和小于 1，除非再次归一化。标准做法是在 softmax 前把不允许位置设为负无穷。
+
+### “Multi-head 会让输出维度变成 `H × D`”
+
+每个 head 使用较小的 `d_head`。常见设置下 `H × d_head = D`，拼接后仍为 `D`，block 外部 shape 不变。
+
+### “Residual 意味着可以跳过子层”
+
+Residual 是逐元素相加，不是条件分支。子层仍然执行；旁路让原输入可以直接进入加法结果。
+
+## 理解检查
+
+### 第一层：能否沿数据流复述
+
+1. Q、K、V 分别回答什么问题？
+2. Causal mask 为什么必须在 softmax 前生效？
+3. Attention 与 FFN 在“是否混合不同位置”上有什么区别？
+
+### 第二层：能否检查 shape
+
+4. `Q: (B,H,T,d_head)` 与转置后的 K 相乘，为什么得到 `(B,H,T,T)`？
+5. Attention weight 与 V 相乘后，哪个维度被消去？
+6. 为什么 residual addition 要求 attention/FFN 最终返回 `(B,T,D)`？
+
+### 第三层：能否做工程判断
+
+7. 把 `T` 从 1024 增加到 2048，full attention score 元素数大约变成几倍？
+8. 在小 batch、长上下文的逐 token 生成中，GPU 频繁读取历史 K/V。它通常更接近计算瓶颈还是内存带宽瓶颈？哪些条件变化可能改变判断？
+9. 一个实现测试通过，却允许位置 2 读取位置 3。它破坏了哪个语言模型不变量？
+
+<details>
+<summary>查看 shape 题答案</summary>
+
+4. 对每个 `(B,H)`，`(T,d_head) @ (d_head,T)` 消去 `d_head`，留下 `(T,T)`。
+
+5. 被消去的是 key-position 对应的 `T`；每个 query 得到一个 `d_head` 向量。
+
+6. 逐元素相加要求两侧 shape 相同；否则 block 不能保持可堆叠的接口。
+
+7. 约四倍，因为 score 元素数随 `T²` 增长。
+
+</details>
+
+## 接下来读什么
+
+- 准备进入架构比较：[Lecture 3 · Architecture & Hyperparameters](../../lessons/03-architecture-hyperparameters/)。
+- Shape、dtype、device 仍不熟：[PyTorch 与张量](../pytorch/)。
+- 想重新看公式里的运算：[数学最小集](../math/)。
+- 开始实现课程组件：[Assignment 1 · Basics 路线](../../assignments/a1/)，并遵守当前官方政策。
+
+## 官方依据与状态
+
+- [CS336 Spring 2026 Assignment 1 handout](https://github.com/stanford-cs336/assignment1-basics/blob/main/cs336_assignment1_basics.pdf)
+- [CS336 Spring 2026 Lecture 3 slides](https://github.com/stanford-cs336/lectures/blob/main/lecture_03.pdf)
+- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)
+- [CS336 Spring 2026 课程主页、Honor Code 与 AI policy](https://cs336.stanford.edu/)
+- 本页是本站的零基础解释，不是官方作业答案。
+- 最后对照：Assignment 1 version 26.0.3 与 Lecture 3，2026-07-15。

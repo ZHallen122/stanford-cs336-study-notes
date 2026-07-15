@@ -18,7 +18,7 @@ tableOfContents:
 
 ## Attention
 
-**注意力机制。** 根据当前 token 与上下文其他 token 的相关程度，组合信息的一种计算。它不是人类意识中的“注意”。
+**注意力机制。** 根据当前 token 与上下文其他 token 的相关程度，组合信息的一种计算。它不是人类意识中的“注意”；Q/K/V、mask 与 shape 的完整入门见[Transformer block 与 Attention](../../foundations/transformer-attention/)。
 
 ## Autograd
 
@@ -44,9 +44,17 @@ tableOfContents:
 
 **训练状态快照。** 为故障恢复或后续继续训练而保存的状态。除了模型 parameter，连续恢复通常还需要 optimizer、step、随机数、data position 和 scheduler 等状态。
 
+## Causal mask
+
+**因果遮罩。** 在计算 attention 权重前，把当前位置右侧的未来位置标为不可读取。这样，第 $t$ 个 token 的表示只依赖第 $t$ 个及更早的 token，符合自回归语言模型逐 token 预测的约束。
+
 ## Context window
 
 **上下文窗口。** 模型一次 forward 能直接参考的 token 范围。更长的窗口会增加内存与计算成本，并不保证模型能同样有效地利用所有位置。
+
+## GQA
+
+**Grouped-Query Attention，分组查询注意力。** 使用较多 query heads、较少 key/value heads，让一组 query heads 共享 K/V。它在 MHA 与 MQA 之间折中表达能力和生成期 KV cache 成本。
 
 ## Embedding
 
@@ -72,6 +80,10 @@ tableOfContents:
 
 **推理。** 使用已经训练的参数生成或评分，不再通过训练循环更新参数。
 
+## KV cache
+
+**键值缓存。** 自回归生成时，为每层保存历史 token 的 key 和 value，避免生成下一个 token 时重算完整前缀。它通常随 batch、上下文长度、层数、KV head 数和 head dimension 线性增长。
+
 ## Logits
 
 模型对每个候选类别或 token 给出的未归一化分数。经过 softmax 后可转成概率分布。
@@ -92,6 +104,10 @@ tableOfContents:
 
 **PyTorch 模型组件。** `nn.Module` 把 forward 计算、子模块、parameter 和 buffer 组织在一起，并提供训练/推理模式切换与状态管理接口。
 
+## MQA
+
+**Multi-Query Attention，多查询注意力。** 多个 query heads 共享单个 key head 和 value head，以显著缩小生成期 KV cache 与内存带宽需求；相比 GQA，它的压缩更激进，也可能带来更大质量风险。
+
 ## Optimizer
 
 **优化器。** 根据参数的 gradient 和内部状态计算参数更新的算法，例如 AdamW。它决定怎样走，但训练目标由 loss 定义。
@@ -103,6 +119,38 @@ tableOfContents:
 ## Parameter
 
 **参数。** 训练过程中会更新的数值，例如线性层权重。它不同于运行时产生的 activation。
+
+## Pre-norm
+
+**前置归一化。** 在 attention 或 FFN 子层之前做 normalization，再把子层输出加回未经该 norm 的 residual stream。它为深层 Transformer 提供更直接的信号和梯度路径。
+
+## Q / K / V
+
+**Query、Key 与 Value。** Attention 从输入生成的三组向量。Query 表示当前位置要读取什么，Key 用于计算各位置的匹配分数，Value 是最终按权重组合的内容；三者是学习到的表示，不是人工填写的数据库字段。
+
+## Residual connection
+
+**残差连接。** 把子层输出加回其输入，例如 $x + \operatorname{Attention}(x)$。它保持一条直接的信息与梯度路径，但要求相加两侧的 shape 相容。
+
+## RMSNorm
+
+**Root Mean Square Normalization。** 按特征维的均方根缩放每个 token 的表示，但不减去均值。它保持 shape，通常比 LayerNorm 少一次中心化和一组 bias 参数。
+
+## RoPE
+
+**Rotary Position Embedding，旋转位置嵌入。** 按 token 位置旋转 query 和 key 的成对坐标，使 attention 内积能够通过旋转角之差表达相对位置。
+
+## Sliding-window attention
+
+**滑动窗口注意力。** 每个位置只读取附近固定窗口内的 token，把单层 attention score 数量从约 `T²` 降到约 `T × W`，代价是单层无法直接访问任意远的位置。
+
+## Softmax
+
+**归一化指数函数。** 把一组任意实数分数转换为非负且总和为 1 的权重。实现时通常先减去最大分数，以避免指数运算溢出；它不会自动把最大项变成 1。
+
+## SwiGLU
+
+**Swish-Gated Linear Unit。** 使用 SiLU/Swish 激活的门控 FFN：一条投影产生 gate，另一条投影产生内容，逐元素相乘后再投影回 model dimension。
 
 ## Tensor
 
@@ -126,7 +174,7 @@ tableOfContents:
 
 ## Transformer
 
-以 attention 和逐位置前馈网络为核心构件的神经网络架构。现代语言模型通常堆叠很多 Transformer block。
+以 attention 和逐位置前馈网络为核心构件的神经网络架构。现代语言模型通常堆叠很多 Transformer block；基础数据流见[Transformer block 与 Attention](../../foundations/transformer-attention/)。
 
 ## Vocabulary
 

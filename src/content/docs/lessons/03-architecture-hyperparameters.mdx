@@ -1,0 +1,499 @@
+---
+title: 03 · Architecture & Hyperparameters
+description: 拆开现代 Transformer block，理解 pre-norm、RMSNorm、SwiGLU、RoPE、稳定性技巧与推理友好的 attention 变体。
+sidebar:
+  badge:
+    text: 完整讲义
+    variant: success
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
+---
+
+import Term from '../../../components/Term.astro';
+import { Aside, Card, CardGrid, Steps } from '@astrojs/starlight/components';
+import modernBlock from '../../../assets/diagrams/modern-transformer-block.svg';
+import modernBlockMobile from '../../../assets/diagrams/modern-transformer-block-mobile.svg';
+
+<Aside type="note" title="对应官方材料">
+本页按 Stanford CS336 Spring 2026 的[官方 Lecture 3 幻灯片](https://github.com/stanford-cs336/lectures/blob/main/lecture_03.pdf)重组，面向第一次拆解 Transformer 的软件工程师。课程日期、讲授范围与 assignment 入口以[官方课程主页](https://cs336.stanford.edu/)为准；模型例子和“当前共识”都带有 2026 年时间边界。
+</Aside>
+
+## 这一讲要带走什么
+
+Lecture 2 给了 tensor、资源账本与训练循环；这一讲进入 `model forward` 内部，回答一个更难的问题：现代 dense language model 为什么大多长得相似，又为什么仍存在许多小差异？
+
+完成本页后，你应该能够：
+
+- 画出一个 pre-norm Transformer block 的数据流，并追踪 `(B, T, D)` shape。
+- 区分 LayerNorm 与 RMSNorm、post-norm 与 pre-norm。
+- 写出 SwiGLU 的三条投影，并解释 `d_ff ≈ 8D/3` 的参数量来源。
+- 用二维旋转理解 Rotary Position Embedding (RoPE) 为什么表达相对位置。
+- 把 `d_ff`、head dimension、层数、词表大小和 regularization 当作成本旋钮，而不是神秘常数。
+- 解释 z-loss、QK norm 与 logit soft-capping 分别约束哪个 softmax 前的数值。
+- 比较 Multi-Head Attention (MHA)、Multi-Query Attention (MQA)、Grouped-Query Attention (GQA) 与 sliding-window attention 的质量和推理成本。
+
+当前主线位置：token IDs → embedding → **重复的 Transformer blocks** → logits → loss。
+
+:::note[本讲的边界]
+官方 Lecture 3 比较 dense Transformer 的常见设计，不试图证明唯一最优架构。Lecture 4 会继续讨论 attention alternatives 与 Mixture of Experts (MoE)；本页不会提前展开这些替代架构。
+:::
+
+## 开始前需要知道
+
+- **最低门槛**：知道 tensor shape 和矩阵乘法规则；不要求已经实现 Transformer。
+- **流水线位置**：先浏览[给 SDE 的概念地图](../../foundations/concept-map/)中的 embedding、Transformer 与 logits 三站。
+- **Transformer 与 attention**：如果 Q、K、V、softmax、causal mask 或 multi-head 仍陌生，先读[Transformer block 与 Attention](../../foundations/transformer-attention/)；它只建立机制和 shape，不要求提前实现。
+- **PyTorch 与资源核算**：本讲反复使用 FLOPs、arithmetic intensity、view 和 `(B, T, D)`；陌生时按需回看[Lecture 2](../02-pytorch-resources/)。
+- **数学最小集**：需要内积、均方根、指数函数和二维旋转；可按需查看[数学最小集](../../foundations/math/)。
+- **符号速查**：`B`、`T`、`D`、`H`、`d_head` 与本讲新增的 `L`、`d_ff`、`H_q`、`H_kv` 见[符号与形状速查](../../reference/notation/)。
+
+:::tip[建议阅读方式]
+第一次先读 block 全景、三个主流组件和最后的小结。第二次再推 RoPE、参数量与 KV cache；稳定性技巧先记住“它在限制哪个量”，不需要背模型名单。
+:::
+
+## 给 SDE 的心智模型：稳定的接口，替换式实现
+
+把 Transformer block 看成实现同一接口的一组中间件：输入和输出都保持 `(B, T, D)`，残差连接提供主干，attention 与 feed-forward network (FFN) 分别负责跨位置通信和逐位置计算。
+
+这个类比的价值在于分离 contract 与实现。RMSNorm 可以换回 LayerNorm，SwiGLU 可以换成 GELU，MHA 可以换成 GQA；只要外部 shape 不变，堆叠方式仍能工作。
+
+类比也会失效：这些组件不是独立微服务。初始化、normalization、learning rate、数值精度和 kernel 实现会共同改变 gradient 与 wall-clock time；“接口兼容”不代表训练行为兼容。
+
+<figure class="teaching-figure">
+  <picture>
+    <source media="(max-width: 40rem)" srcset={modernBlockMobile.src} />
+    <img src={modernBlock.src} width={modernBlock.width} height={modernBlock.height} alt="现代 pre-norm Transformer block：形状 B×T×D 的输入先经过 RMSNorm 和带 RoPE 的因果自注意力，再与原输入残差相加；随后经过 RMSNorm 和 SwiGLU，再做第二次残差相加，输出形状仍为 B×T×D。" />
+  </picture>
+  <figcaption>两条残差旁路保持主信号路径。Norm、attention 和 FFN 改变数值，不改变 block 的外部 shape；这使许多架构变体可以在同一堆叠接口中比较。</figcaption>
+</figure>
+
+## Part 1：先固定一个现代 block
+
+令输入 hidden state 为 $X \in \mathbb{R}^{B \times T \times D}$。一个常见的 pre-norm、serial block 可以写成：
+
+$$
+H = X + \operatorname{Attention}(\operatorname{RMSNorm}(X))
+$$
+
+$$
+Y = H + \operatorname{SwiGLU}(\operatorname{RMSNorm}(H))
+$$
+
+`Attention` 在序列位置之间混合信息，`SwiGLU` 独立处理每个位置。两者输出都是 `(B, T, D)`，所以才能与残差输入逐元素相加。
+
+训练一个 decoder-only language model 时，attention 还要带 causal mask：位置 `t` 只能读取 `0..t`，不能偷看未来 token。最后一个 block 的输出再映射到 `(B, T, V)` logits。
+
+<CardGrid>
+  <Card title="Attention · 通信">
+    每个位置从允许访问的其他位置读取并聚合信息。Full attention 的 score tensor 通常是 `(B, H, T, T)`。
+  </Card>
+  <Card title="FFN · 逐位置计算">
+    对每个 token 使用同一组权重，把 `D` 暂时扩到 `d_ff` 再投影回 `D`。它不直接混合不同位置。
+  </Card>
+  <Card title="Residual · 主干">
+    让 block 学习对当前表示的增量。Norm 放在哪里，决定主干是否被每层反复归一化。
+  </Card>
+</CardGrid>
+
+## Part 2：Pre-norm 为什么成为默认
+
+原始 Transformer 使用 post-norm：先计算子层并残差相加，再归一化。
+
+$$
+Y_{post} = \operatorname{Norm}(X + F(X))
+$$
+
+现代语言模型常用 pre-norm：先归一化子层输入，残差主干保持直通。
+
+$$
+Y_{pre} = X + F(\operatorname{Norm}(X))
+$$
+
+对深网络而言，pre-norm 给 gradient 提供了一条更直接的 residual path。官方讲义依据 Xiong et al. 与相关实验，把它与较好的 gradient propagation、较少 gradient spike、可用更大学习率联系起来。
+
+:::caution[Pre-norm 不是“没有 post-norm”]
+一些模型会在残差相加之外再加一个 norm，或在 block 末尾使用额外 norm。真正应检查的是：norm 是否位于 residual stream 上、每个子层前后各有哪些 norm，而不是只看配置名。
+:::
+
+## Part 3：RMSNorm 保留尺度归一化，省去中心化
+
+LayerNorm 对每个 token 的 `D` 个特征先减均值，再除以标准差；RMSNorm 不减均值，只按 root mean square 缩放。
+
+对向量 $x \in \mathbb{R}^{D}$：
+
+$$
+\operatorname{RMSNorm}(x)
+= \gamma \odot
+\frac{x}{\sqrt{\frac{1}{D}\sum_{i=1}^{D}x_i^2 + \epsilon}}
+$$
+
+其中 $\gamma \in \mathbb{R}^{D}$ 是可训练缩放参数，$\epsilon$ 防止除零。它对 `(B, T, D)` 的每个 `(b, t)` 向量独立执行，shape 不变。
+
+RMSNorm 少了均值计算和 bias 参数。它在总 FLOPs 中占比不大，却会多次读取和写回整块 activation；因此收益可能来自更少的数据移动与更易融合的 kernel，而不是矩阵乘法 FLOPs 大幅下降。
+
+```python
+import torch
+
+def rms_norm(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+    # x: (..., D); 输出 shape、dtype、device 与 x 相同
+    rms = x.float().pow(2).mean(dim=-1, keepdim=True)
+    return (x * torch.rsqrt(rms + eps)).to(x.dtype)
+
+x = torch.tensor([[3.0, 4.0]])
+y = rms_norm(x)
+assert torch.allclose(y.pow(2).mean(dim=-1), torch.ones(1))
+```
+
+这里用 FP32 计算平方均值，展示 mixed precision 下常见的稳定性思路。真实实现还要乘可训练的 `gamma`，并由框架或 fused kernel 决定累积精度。
+
+## Part 4：SwiGLU 用门控扩展 FFN
+
+普通两层 FFN 先从 `D` 扩到 `d_ff`，经过 activation，再投影回 `D`：
+
+$$
+\operatorname{FFN}(x) = \sigma(xW_1)W_2
+$$
+
+SwiGLU 使用两条上投影：一条产生门控值，另一条产生内容；二者逐元素相乘后再下投影。
+
+$$
+\operatorname{SwiGLU}(x)
+= \left(\operatorname{SiLU}(xW_{gate}) \odot xW_{up}\right)W_{down}
+$$
+
+对输入 `x: (..., D)`：
+
+| 权重 | Shape | 输出 |
+| --- | --- | --- |
+| `W_gate` | `(D, d_ff)` | `(..., d_ff)` |
+| `W_up` | `(D, d_ff)` | `(..., d_ff)` |
+| `W_down` | `(d_ff, D)` | `(..., D)` |
+
+忽略 bias，普通 FFN 约有 `2D d_ff` 个参数，gated FFN 约有 `3D d_ff` 个参数。若普通 FFN 使用 `d_ff = 4D`，为保持参数量近似相同，gated 版本取：
+
+$$
+3D d_{ff} \approx 2D(4D)
+\quad\Rightarrow\quad
+d_{ff} \approx \frac{8}{3}D
+$$
+
+这就是 Lecture 3 中“GLU 版本常缩到原来的 `2/3`”的来源。真实模型常把结果向硬件友好的倍数取整，所以配置文件不会总是精确等于 `8D/3`。
+
+:::note[门控不是免费提升]
+相同 `d_ff` 下，SwiGLU 比普通 FFN 多一条投影。比较架构时应固定总参数、训练 FLOPs 或 wall-clock budget 中至少一种口径；否则“activation 更好”可能只是模型更大。
+:::
+
+## Part 5：RoPE 把位置写进旋转角
+
+不使用显式位置编码时，纯内容的 query/key 内积不直接包含 token 的绝对位置；不过在 decoder-only Transformer 中，causal mask 和上下文仍可能让模型获得[隐式位置线索](https://arxiv.org/abs/2203.16634)。RoPE 提供一条更直接的结构化路径：它不把位置向量加到 hidden state，而是把 query 与 key 的每对坐标按位置相关角度旋转。
+
+二维旋转矩阵为：
+
+$$
+R(\theta) =
+\begin{bmatrix}
+\cos\theta & -\sin\theta \\
+\sin\theta & \cos\theta
+\end{bmatrix}
+$$
+
+位置 `i` 的 query 使用 $R(i\theta)$，位置 `j` 的 key 使用 $R(j\theta)$。它们的内积满足：
+
+$$
+(R(i\theta)q)^T(R(j\theta)k)
+= q^T R((j-i)\theta)k
+$$
+
+右侧只通过 `j - i` 依赖相对距离。真实 RoPE 会给不同坐标对分配不同频率，并在每一层 attention 中旋转 `Q`、`K`；`V` 通常不旋转。
+
+:::caution[RoPE 不等于“无限长度”]
+训练长度之外的角度组合可能外推不良。长上下文模型还会调整 frequency、scale、训练数据与 attention pattern；仅把 `max_position_embeddings` 改大不保证有效。
+:::
+
+### 一个二维手算
+
+令 $q = k = [1, 0]$，每前进一位旋转 $90^\circ$。
+
+- 相同位置：相对角为 `0°`，内积是 `1`。
+- 相差一位：相对角为 `90°`，内积是 `0`。
+- 相差两位：相对角为 `180°`，内积是 `-1`。
+
+这个玩具频率太快，不适合真实模型；它只展示 attention score 可以由相对距离改变。
+
+## Part 6：超参数是预算分配
+
+官方 Lecture 3 的重要结论不是“背一张模型配置表”，而是很多成功模型共享宽阔的可行区域。默认值是有经验支持的起点，不是数学定律。
+
+### FFN 宽度
+
+- 非门控 FFN 常以 `d_ff ≈ 4D` 起步。
+- gated FFN 在参数量匹配时常以 `d_ff ≈ 8D/3` 起步。
+- 偏离默认值也可能训练成功；应在固定预算下比较 loss、吞吐和内存。
+
+### Attention head 宽度
+
+标准 MHA 常令 `H × d_head = D`，这样 Q/K/V 拼接后总宽度与 model dimension 相同。但这不是 shape 定律：投影层可以让 `H × d_head` 大于或小于 `D`，代价是参数与计算随之改变。
+
+### 深度与宽度
+
+设层数为 `L`。更深的模型增加串行依赖与推理 latency，也更难做 pipeline parallelism；更宽的模型让矩阵更大，可能更容易利用硬件，却增加单层参数与 activation。
+
+官方 slides 观察到许多 dense 模型的 `D/L` 落在大约 `100–200`，同时展示了明显例外。把这个区间当作 sanity check，而不是验收规则。
+
+### Vocabulary size
+
+更大的词表可能缩短多语言文本的 token 序列，却会扩大 embedding、输出投影与每个位置的 logits。若不做 weight tying，两个矩阵合计约有 `2VD` 个参数；即使共享权重，softmax 仍要处理 `V` 个候选。
+
+Lecture 3 的 2026 模型表显示，单语模型常见数万 token，多语言与生产模型常达到十万到二十多万。这个观察依赖数据分布与当时模型，不应脱离 tokenizer benchmark 直接复制。
+
+### Dropout 与 weight decay
+
+许多较新的大规模预训练配置将 dropout 设为 `0`，因为数据量大且通常只过一遍 corpus；这不表示 regularization 消失。AdamW 的 weight decay 仍常见，但其作用还会通过 learning-rate schedule 改变优化动态，不能只解释成“防止训练集过拟合”。
+
+## Part 7：架构选择必须连接资源账本
+
+| 选择 | 主要收益 | 新成本或风险 |
+| --- | --- | --- |
+| Pre-norm | 深层 gradient path 更直接 | hidden-state 尺度可能随深度增长，需要最终 norm 或其他控制 |
+| RMSNorm | 少一次中心化，参数和数据移动更少 | 不移除均值；收益依赖 kernel 与硬件 |
+| SwiGLU | 经验证常优于普通 activation | 多一条上投影，必须调整 `d_ff` 才能公平比较 |
+| RoPE | 通过 Q/K 旋转表达相对位置 | 长度外推依赖频率与训练方案 |
+| 更大 `V` | 可能缩短序列、改善多语言覆盖 | embedding、output 与 logits 成本上升 |
+| 更深模型 | 固定宽度下增加计算深度 | 串行 latency、parallelism 与稳定性更难 |
+
+Lecture 2 已经提醒：FLOPs 不等于 runtime。Norm 和 bias 的算术量很小，却可能受 memory bandwidth 支配；两个 FLOPs 接近的 block，也可能因 tensor layout、fusion 和 kernel 数量得到不同时间。
+
+## Part 8：三个 softmax 稳定性工具
+
+Softmax 需要指数和归一化。实现会先减最大 logit 来避免直接 overflow，但训练仍可能让 logits 的绝对尺度或 query/key 内积持续增大。Lecture 3 介绍了三个不同控制点。
+
+### Output z-loss：约束 log partition
+
+令输出 logits 为 $z_1, \dots, z_V$，log partition 为：
+
+$$
+\log Z = \log \sum_{v=1}^{V} e^{z_v}
+$$
+
+z-loss 在主 loss 上添加 $\lambda(\log Z)^2$。它不改变正确 label 的定义，而是惩罚整个输出分布的绝对 logit 尺度漂得过大。
+
+### QK norm：约束 attention 输入
+
+Attention logits 来自 $QK^T / \sqrt{d_{head}}$。QK norm 在进入这个内积前分别归一化 query 和 key，限制它们的尺度，减少 attention softmax 被极端值主导的风险。
+
+### Logit soft-capping：直接压缩极值
+
+一个常见形式是：
+
+$$
+z' = c\tanh(z/c)
+$$
+
+它把 logit 平滑限制在 `(-c, c)`，可用于 attention 或输出 logits。代价是额外算子、可能降低 kernel 效率，并且过小的 `c` 会压掉模型需要的置信差异。
+
+:::caution[稳定性技巧不能替代定位]
+出现 NaN、loss spike 或发散时，先找到第一个异常 tensor，并检查 learning rate、初始化、dtype、norm 位置和数据。把所有 trick 同时打开，会让原因更难隔离。
+:::
+
+## Part 9：Attention 变体从 KV cache 开始理解
+
+训练时可以并行处理序列中的许多位置；自回归生成必须逐 token 前进。为了避免每一步重算历史 key 和 value，推理系统保存每层的 <Term term="KV cache" slug="kv-cache" definition="自回归生成时缓存历史 token 的 key 和 value，避免每个新 token 重算整段历史。">KV cache</Term>。
+
+标准 MHA 中：
+
+- `Q, K, V` shape 是 `(B, H, T, d_head)`。
+- 每层 KV cache 约有 `2 × B × T × H × d_head` 个元素。
+- 生成越长，必须读取的历史 K/V 越多，memory bandwidth 越容易成为瓶颈。
+
+MQA 让所有 query heads 共享一组 K/V，即 `H_kv = 1`。GQA 取中间方案：`1 < H_kv < H_q`，每组 query heads 共享一组 K/V。
+
+| 方案 | Query heads | KV heads | KV cache | 典型取舍 |
+| --- | ---: | ---: | --- | --- |
+| MHA | `H_q` | `H_q` | 最大 | 表达能力基线 |
+| GQA | `H_q` | 较少的 `H_kv` | 约按 `H_kv/H_q` 缩小 | 常见质量/效率折中 |
+| MQA | `H_q` | `1` | 最小 | 推理最省带宽，质量风险更大 |
+
+例如 `H_q = 8`、`H_kv = 2` 时，每 4 个 query heads 共享一组 K/V；在其他维度相同的简化比较中，cache 元素数约为 MHA 的 `1/4`。
+
+:::note[减少 KV heads 不会消除序列长度成本]
+GQA/MQA 缩小每个历史位置保存的宽度，但 cache 仍随 `B × T × L` 线性增长。它们也不把 full attention 的训练 score matrix 从 `T²` 变成线性。
+:::
+
+## Part 10：Sliding-window attention 限制可见范围
+
+Full attention 允许每个位置读取全部过去位置，score 数量随 `T²` 增长。Sliding-window attention (SWA) 只允许读取最近 `W` 个位置，score 数量近似 `T × W`。
+
+这用全局表达能力换取计算与内存。若所有层都只看局部窗口，远距离信息需要跨多层逐步传播；因此一些 2026 模型交错使用 local 与 full attention，让少数 full layers 提供长距离路径。
+
+设计 attention pattern 时要同时问：
+
+1. 单层能看到哪些位置？
+2. 堆叠 `L` 层后，信息最远能传播多远？
+3. 训练 kernel 是否真的跳过被 mask 的区域，还是仍计算完整矩阵？
+4. 生成时 KV cache 保存全部历史，还是只保留窗口？
+
+## Part 11：Serial 与 parallel block
+
+常见 serial block 先做 attention，再让 FFN 读取 attention 更新后的 hidden state。Parallel block 则让 attention 与 FFN 读取同一个 normalized input，再一起加回 residual：
+
+$$
+Y = X + \operatorname{Attention}(\operatorname{Norm}(X))
+      + \operatorname{FFN}(\operatorname{Norm}(X))
+$$
+
+parallel 形式可以共享 norm，并为矩阵融合或并行调度创造机会；但 FFN 看不到同层 attention 的输出，函数结构已改变。官方 slides 的模型统计显示 serial 仍是更常见默认，parallel 是值得 benchmark 的系统/架构联合选择。
+
+## Part 12：CPU 小实验
+
+### 实验 A：RMSNorm 不会减掉均值
+
+```python
+x = torch.tensor([[1.0, 2.0, 3.0]])
+y = rms_norm(x)
+
+print("mean before:", x.mean().item())
+print("mean after:", y.mean().item())
+print("mean square after:", y.pow(2).mean().item())
+```
+
+预测：归一化后 mean square 接近 `1`，mean 不必接近 `0`。把它与 `torch.nn.functional.layer_norm(x, (3,))` 比较。
+
+### 实验 B：验证 RoPE 的相对位置性质
+
+```python
+import math
+
+def rotate(x: torch.Tensor, angle: float) -> torch.Tensor:
+    c, s = math.cos(angle), math.sin(angle)
+    matrix = torch.tensor([[c, -s], [s, c]])
+    return matrix @ x
+
+q = torch.tensor([1.0, 2.0])
+k = torch.tensor([3.0, 4.0])
+theta = 0.2
+
+score_a = rotate(q, 2 * theta) @ rotate(k, 5 * theta)
+score_b = rotate(q, 7 * theta) @ rotate(k, 10 * theta)
+assert torch.allclose(score_a, score_b, atol=1e-6)
+```
+
+两组绝对位置不同，但相对距离都为 `3`，所以 score 相同。
+
+### 实验 C：先算 KV cache 元素数
+
+```python
+def kv_elements(batch, length, layers, kv_heads, head_dim):
+    return 2 * batch * length * layers * kv_heads * head_dim
+
+for kv_heads in [8, 2, 1]:
+    elements = kv_elements(1, 4096, 24, kv_heads, 128)
+    mib_bf16 = elements * 2 / 1024**2
+    print(kv_heads, f"{mib_bf16:.1f} MiB")
+```
+
+这个 payload 估算不含 allocator、metadata、padding、quantization scale 或并行复制。它的价值是先看 `T`、`L` 与 `H_kv` 如何进入成本。
+
+## 常见误区
+
+### “所有现代模型都是同一个 LLaMA block”
+
+它们共享许多设计，但 norm 数量与位置、RoPE 频率、attention pattern、head ratio、bias、FFN 宽度和稳定性工具仍会不同。兼容一个配置文件不等于复现一个模型。
+
+### “RMSNorm FLOPs 少，所以一定明显更快”
+
+Norm 的主要问题常是数据移动和 kernel launch。是否更快取决于 fusion、dtype、hidden size 与硬件；必须 benchmark wall-clock time。
+
+### “`d_ff = 4D` 和 `H d_head = D` 是数学要求”
+
+都不是。它们是常见预算分配。线性投影可以使用其他内部宽度，只要矩阵 shape 合法并重新核算参数、FLOPs 与质量。
+
+### “RoPE 让模型天然理解顺序”
+
+RoPE 给 attention score 提供位置相关结构；模型仍要从训练数据学习怎样使用它。超出训练长度时，表示存在不等于能力可靠。
+
+### “GQA 只是训练优化”
+
+它最直接的收益在增量生成：减少每层需要保存和读取的 K/V。训练时 full attention 的 `T²` score 结构仍然存在。
+
+### “加一个 stability trick 就能修复发散”
+
+这些技巧控制不同数值。若根因是错误 mask、过大学习率、错误初始化或低精度 overflow，盲目叠加技巧可能只延迟失败。
+
+## 理解检查
+
+### 第一层：能否说清楚
+
+1. Attention 与 FFN 在信息混合范围上有什么不同？
+2. Pre-norm 中 residual stream 为什么不经过子层前的 norm？
+3. RMSNorm 与 LayerNorm 少了哪一步？
+4. RoPE 为什么旋转 Q/K，而不是把位置向量直接加到 hidden state？
+5. GQA 中 query head 与 KV head 是怎样共享的？
+
+### 第二层：能否推导
+
+6. 输入 `(B, T, D)` 经过 SwiGLU 三个矩阵时，各中间 shape 是什么？
+7. 为什么 gated FFN 在匹配 `d_ff = 4D` 普通 FFN 参数量时得到约 `8D/3`？
+8. `B=2, T=1024, L=24, H_kv=4, d_head=128` 的 BF16 KV cache payload 约是多少 MiB？
+9. 窗口 `W=512` 时，SWA 的 score 数量相对 full attention 怎样随 `T` 增长？
+10. 两个位置同时平移 100，RoPE attention 内积为什么保持不变？
+
+### 第三层：能否做工程判断
+
+11. 把 MHA 改成 GQA 后训练 loss 略差、生成吞吐明显提高，怎样判断是否值得？
+12. 一个 RMSNorm kernel 的 FLOPs 很少但耗时不低，你会查看哪些 profiler 指标？
+13. 长上下文训练稳定，但生成到训练长度之外质量骤降。为什么不能只归因于 KV cache？
+14. 模型出现 attention logit spike。QK norm、z-loss 与 output soft-cap 中哪个控制点最直接？
+
+<details>
+<summary>查看计算题答案</summary>
+
+6. 两条上投影都从 `(B, T, D)` 变为 `(B, T, d_ff)`；逐元素相乘后 shape 不变；下投影回 `(B, T, D)`。
+
+7. 普通 FFN 参数约为 `2D × 4D = 8D²`；gated FFN 约为 `3D × d_ff`。令二者相等，得到 `d_ff = 8D/3`。
+
+8. 元素数为 `2 × 2 × 1024 × 24 × 4 × 128 = 50,331,648`；BF16 每元素 2 bytes，约 `96 MiB`。
+
+9. Full attention 约为 `T²`，SWA 约为 `TW`。固定 `W` 时，后者随 `T` 线性增长。
+
+10. 内积只依赖旋转角之差；同时平移会给两个角加上相同量，差值不变。
+
+</details>
+
+## 与 Assignment 1 的连接
+
+Lecture 3 给的是组件 contract、设计动机和比较方法，不是 A1 的提交答案。开始模型实现前，建议你能独立完成：
+
+- 为 RMSNorm、RoPE、attention、SwiGLU 与完整 block 写出输入输出 shape。
+- 用小 tensor 验证 causal mask 不会读取未来位置。
+- 分别计算 attention 与 FFN 的参数量，并与 `model.parameters()` 核对。
+- 用固定输入检查 residual、norm 与 RoPE 的数值不变量。
+- 先实现 correctness-first 版本，再用 profiler 判断 fusion 或 layout 优化是否有效。
+- 在训练 loop 中定位第一个 NaN/Inf，而不是只监控最终 loss。
+
+继续阅读[本站 A1 路线](../../assignments/a1/)与[官方 Assignment 1 仓库和 handout](https://github.com/stanford-cs336/assignment1-basics)。遵守当前课程的 [Honor Code 与 AI policy](https://cs336.stanford.edu/#honor-code)：可以用 AI 解释高层概念或低层编程问题，不能让 AI 直接完成可提交解答。
+
+## 本讲小结
+
+- 现代 dense Transformer 的外部 contract 很稳定：每个 block 通常保持 `(B, T, D)`，内部由 attention、FFN、norm 和 residual 组成。
+- Pre-norm 保持 residual 主干直通；RMSNorm 不减均值，收益常与数据移动和 kernel 实现有关。
+- SwiGLU 用两条上投影做门控；参数量匹配解释了常见的 `d_ff ≈ 8D/3`。
+- RoPE 通过对 Q/K 的位置相关旋转，让内积依赖相对距离；它本身不保证长上下文外推。
+- `d_ff`、head width、深宽比、词表和 regularization 都是预算旋钮，默认值不是 shape 定律。
+- z-loss、QK norm 与 soft-capping 分别控制输出 log partition、attention 输入尺度和极端 logits。
+- GQA/MQA 通过减少 KV heads 降低生成期 cache 与带宽；SWA 通过限制可见窗口降低长序列成本。
+- 架构选择必须同时报告质量、参数、训练成本、推理 latency、内存与实际 wall-clock benchmark。
+
+## 官方材料与延伸阅读
+
+- [CS336 Spring 2026 Lecture 3 slides](https://github.com/stanford-cs336/lectures/blob/main/lecture_03.pdf)
+- [CS336 Spring 2026 课程主页与 schedule](https://cs336.stanford.edu/)
+- [On Layer Normalization in the Transformer Architecture](https://arxiv.org/abs/2002.04745)
+- [Root Mean Square Layer Normalization](https://arxiv.org/abs/1910.07467)
+- [GLU Variants Improve Transformer](https://arxiv.org/abs/2002.05202)
+- [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)
+- [Fast Transformer Decoding: One Write-Head is All You Need](https://arxiv.org/abs/1911.02150)
+- [GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints](https://arxiv.org/abs/2305.13245)
+- [Generating Long Sequences with Sparse Transformers](https://arxiv.org/abs/1904.10509)
+
+笔记最后对照：CS336 Spring 2026 Lecture 3，2026-07-15。

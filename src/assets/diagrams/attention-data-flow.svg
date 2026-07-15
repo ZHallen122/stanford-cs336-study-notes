@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1120" viewBox="0 0 800 1120" role="img" aria-labelledby="title desc">
+  <title id="title">Scaled dot-product attention 的数据流与 shape</title>
+  <desc id="desc">输入 X 形状 B T D，通过三组线性投影得到 Q K V，形状 B H T d_head。Q 与 K 转置相乘得到 B H T T 的分数，加入因果遮罩并经过 softmax 得到权重，再与 V 相乘、合并各个 head 并输出 B T D。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2f5d83" />
+    </marker>
+    <style>
+      .box { fill: #f7fbff; stroke: #2f5d83; stroke-width: 3; rx: 16; }
+      .projection { fill: #fff5d9; stroke: #8a6719; }
+      .compute { fill: #e9f6ef; stroke: #26704a; }
+      .mask { fill: #f5ecff; stroke: #6f42a1; }
+      .line { fill: none; stroke: #2f5d83; stroke-width: 4; marker-end: url(#arrow); }
+      .branch { fill: none; stroke: #2f5d83; stroke-width: 3; }
+      text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; fill: #17212b; text-anchor: middle; }
+      .label { font-size: 28px; font-weight: 700; }
+      .shape { font-size: 22px; }
+      .note { font-size: 20px; }
+    </style>
+  </defs>
+  <rect width="800" height="1120" rx="20" fill="#ffffff" />
+
+  <rect class="box" x="220" y="30" width="360" height="100" />
+  <text class="label" x="400" y="73">输入 hidden states · X</text>
+  <text class="shape" x="400" y="108">(B, T, D)</text>
+
+  <path class="branch" d="M400 130 V185 M145 185 H655" />
+  <path class="line" d="M145 185 V220" />
+  <path class="line" d="M400 185 V220" />
+  <path class="line" d="M655 185 V220" />
+
+  <rect class="box projection" x="45" y="230" width="200" height="115" />
+  <text class="label" x="145" y="273">Query · Q</text>
+  <text class="shape" x="145" y="307">(B, H, T, d_head)</text>
+  <rect class="box projection" x="300" y="230" width="200" height="115" />
+  <text class="label" x="400" y="273">Key · K</text>
+  <text class="shape" x="400" y="307">(B, H, T, d_head)</text>
+  <rect class="box projection" x="555" y="230" width="200" height="115" />
+  <text class="label" x="655" y="273">Value · V</text>
+  <text class="shape" x="655" y="307">(B, H, T, d_head)</text>
+
+  <path class="branch" d="M145 345 V410 H400 M400 345 V410" />
+  <path class="line" d="M400 410 V445" />
+  <rect class="box compute" x="190" y="455" width="420" height="115" />
+  <text class="label" x="400" y="498">相似度分数 · QKᵀ / √d_head</text>
+  <text class="shape" x="400" y="538">(B, H, T, T)</text>
+
+  <path class="line" d="M400 570 V615" />
+  <rect class="box mask" x="190" y="625" width="420" height="105" />
+  <text class="label" x="400" y="668">因果 mask：遮住未来位置</text>
+  <text class="shape" x="400" y="703">被遮位置在 softmax 前设为 −∞</text>
+
+  <path class="line" d="M400 730 V775" />
+  <rect class="box compute" x="220" y="785" width="360" height="100" />
+  <text class="label" x="400" y="827">Softmax → attention 权重</text>
+  <text class="shape" x="400" y="860">每一行非负，且和为 1</text>
+
+  <path class="line" d="M655 345 V990 H650" />
+  <path class="line" d="M400 885 V920" />
+  <rect class="box compute" x="160" y="930" width="480" height="120" />
+  <text class="label" x="400" y="970">权重 × V，合并 heads</text>
+  <text class="label" x="400" y="1003">再做输出投影</text>
+  <text class="shape" x="400" y="1033">(B, T, D)</text>
+
+  <path class="line" d="M400 1050 V1075" />
+  <text class="note" x="400" y="1105">Q/K 决定“读哪里”，V 提供“读到什么”。</text>
+</svg>

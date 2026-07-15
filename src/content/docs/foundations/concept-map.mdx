@@ -33,6 +33,7 @@ import dataFlowMobile from '../../../assets/diagrams/language-model-data-flow-mo
 
 - [Lecture 1 · Overview & Tokenization](../../lessons/01-tokenization/)：先定位 tokenization，再理解 Transformer、loss 与参数更新在流水线中的位置。
 - [Lecture 2 · PyTorch 与资源核算](../../lessons/02-pytorch-resources/)：开始给每个箭头补 shape、dtype、device、FLOPs 和内存。
+- [Lecture 3 · Architecture & Hyperparameters](../../lessons/03-architecture-hyperparameters/)：拆开 Transformer block，比较 norm、FFN、位置编码与推理友好的 attention 变体。
 - 后续每一讲都会回到这张地图。新组件不是孤立知识，而是在已有 contract 中替换一站或改变一项成本。
 
 ## 先分清四类东西
@@ -71,7 +72,7 @@ import dataFlowMobile from '../../../assets/diagrams/language-model-data-flow-mo
 
 3. **Embedding → contextual representation**
 
-   Transformer block 让每个位置组合上下文信息。输入和输出通常都保持 `(B, T, D)`，但每个位置的值已经依赖其他位置。
+   Transformer block 让每个位置组合上下文信息。输入和输出通常都保持 `(B, T, D)`，但每个位置的值已经依赖其他位置；Q/K/V、causal mask 和 residual 的最小机制见[Transformer block 与 Attention](../transformer-attention/)。
 
 4. **内部向量 → logits**
 

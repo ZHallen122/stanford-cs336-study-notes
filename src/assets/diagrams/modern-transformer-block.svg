@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="620" viewBox="0 0 1400 620" role="img" aria-labelledby="title desc">
+  <title id="title">现代 pre-norm Transformer block 的数据流</title>
+  <desc id="desc">输入形状 B T D，先经过 RMSNorm 和因果自注意力，再通过残差相加；随后经过第二个 RMSNorm 和 SwiGLU，再通过第二次残差相加。整个 block 保持 B T D 形状。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2f5d83" /></marker>
+    <style>
+      .box { fill: #f7fbff; stroke: #2f5d83; stroke-width: 3; rx: 14; }
+      .norm { fill: #fff5d9; stroke: #8a6719; }
+      .compute { fill: #e9f6ef; stroke: #26704a; }
+      .add { fill: #f5ecff; stroke: #6f42a1; stroke-width: 3; }
+      .main { fill: none; stroke: #2f5d83; stroke-width: 4; marker-end: url(#arrow); }
+      .residual { fill: none; stroke: #6f42a1; stroke-width: 3; stroke-dasharray: 10 8; marker-end: url(#arrow); }
+      text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; fill: #17212b; text-anchor: middle; }
+      .label { font-size: 24px; font-weight: 700; }
+      .shape { font-size: 18px; }
+      .note { font-size: 20px; }
+    </style>
+  </defs>
+  <rect width="1400" height="620" rx="18" fill="#ffffff" />
+
+  <rect class="box" x="20" y="250" width="120" height="100" />
+  <text class="label" x="80" y="290">输入</text><text class="shape" x="80" y="325">(B, T, D)</text>
+  <rect class="box norm" x="190" y="250" width="145" height="100" />
+  <text class="label" x="263" y="290">RMSNorm</text><text class="shape" x="263" y="325">逐 token</text>
+  <rect class="box compute" x="385" y="230" width="210" height="140" />
+  <text class="label" x="490" y="280">因果自注意力</text><text class="shape" x="490" y="315">Q, K, V + RoPE</text><text class="shape" x="490" y="343">输出 (B, T, D)</text>
+  <circle class="add" cx="650" cy="300" r="40" /><text class="label" x="650" y="309">＋</text>
+  <rect class="box norm" x="740" y="250" width="145" height="100" />
+  <text class="label" x="813" y="290">RMSNorm</text><text class="shape" x="813" y="325">逐 token</text>
+  <rect class="box compute" x="935" y="240" width="155" height="120" />
+  <text class="label" x="1013" y="288">SwiGLU</text><text class="shape" x="1013" y="323">逐位置 D → D</text>
+  <circle class="add" cx="1145" cy="300" r="40" /><text class="label" x="1145" y="309">＋</text>
+  <rect class="box" x="1235" y="250" width="145" height="100" />
+  <text class="label" x="1308" y="290">输出</text><text class="shape" x="1308" y="325">仍为 (B, T, D)</text>
+
+  <path class="main" d="M140 300 H180" /><path class="main" d="M335 300 H375" /><path class="main" d="M595 300 H600" />
+  <path class="main" d="M690 300 H730" /><path class="main" d="M885 300 H925" /><path class="main" d="M1090 300 H1095" /><path class="main" d="M1185 300 H1225" />
+  <path class="residual" d="M140 275 V105 H650 V250" />
+  <text class="note" x="390" y="88">残差旁路：不经过 norm 或 attention</text>
+  <path class="residual" d="M700 325 V505 H1145 V350" />
+  <text class="note" x="920" y="545">残差旁路：不经过 norm 或 FFN</text>
+</svg>

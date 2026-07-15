@@ -56,7 +56,8 @@ export default defineConfig({
           items: [
             { label: '给 SDE 的概念地图', slug: 'foundations/concept-map' },
             { label: '数学最小集', slug: 'foundations/math' },
-            { label: 'PyTorch 与张量', slug: 'foundations/pytorch' }
+            { label: 'PyTorch 与张量', slug: 'foundations/pytorch' },
+            { label: 'Transformer block 与 Attention', slug: 'foundations/transformer-attention' }
           ]
         },
         {
@@ -65,6 +66,7 @@ export default defineConfig({
           items: [
             { label: '01 · Overview & Tokenization', slug: 'lessons/01-tokenization' },
             { label: '02 · PyTorch 与资源核算', slug: 'lessons/02-pytorch-resources' },
+            { label: '03 · Architecture & Hyperparameters', slug: 'lessons/03-architecture-hyperparameters' },
             { label: '后续课程占位与计划', slug: 'lessons/coming-next' }
           ]
         },

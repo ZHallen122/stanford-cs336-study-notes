@@ -26,6 +26,8 @@ PyTorch 把“多维数组计算、自动求导、模型状态和参数更新”
 ## 会在哪些课程里用到
 
 - [Lecture 2 · PyTorch 与资源核算](../../lessons/02-pytorch-resources/)：把 tensor、autograd、Module 和 optimizer 展开成内存与计算账本。
+- [Transformer block 与 Attention](../transformer-attention/)：用同一套 tensor 与 Module 语义阅读 Q/K/V 投影、mask、residual 和 FFN。
+- [Lecture 3 · Architecture & Hyperparameters](../../lessons/03-architecture-hyperparameters/)：追踪现代 Transformer block 的 shape、参数和执行成本。
 - [Assignment 1 · Basics 路线](../../assignments/a1/)：阅读和调试模型、loss、optimizer 与 training loop 时作为快速参考。
 - 后续架构、GPU kernel、parallelism 和 inference 课程都会继续使用同一套 tensor 语义。
 
@@ -341,6 +343,7 @@ print(first_parameter.dtype, first_parameter.device)
 ## 继续到哪里
 
 - [Lecture 2 · PyTorch 与资源核算](../../lessons/02-pytorch-resources/)：继续学习 storage/view、dtype 成本、FLOPs、MFU、optimizer state、checkpoint 与 mixed precision。
+- [Transformer block 与 Attention](../transformer-attention/)：把 tensor shape 应用到 Q/K/V、softmax、causal mask、multi-head 和 residual。
 - [数学最小集](../math/)：复习矩阵乘法、gradient 和链式法则。
 - [符号与形状速查](../../reference/notation/)：查询 `B`、`T`、`D` 等维度约定。
 - [Assignment 1 · Basics 路线](../../assignments/a1/)：把这些检查动作应用到课程组件，但不获取提交答案。

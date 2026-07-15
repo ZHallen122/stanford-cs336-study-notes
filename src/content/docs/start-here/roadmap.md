@@ -28,8 +28,9 @@ description: 根据你的已有经验，选择最短但不断层的 CS336 学习
 2. **建立概念地图**：语言模型系统中有哪些组件，它们怎样传递数据。
 3. **数学最小集**：只补课程会反复使用的符号和操作。
 4. **PyTorch 与张量**：把熟悉的程序执行映射到张量计算。
-5. **按课学习**：tokenization → 模型架构 → 系统 → scaling → data → alignment。
-6. **按里程碑做作业**：先正确，再测量，最后优化。
+5. **Transformer 与 Attention**：先看清 Q/K/V、mask、shape 与 residual 数据流。
+6. **按课学习**：tokenization → 模型架构 → 系统 → scaling → data → alignment。
+7. **按里程碑做作业**：先正确，再测量，最后优化。
 
 ## 两种阅读节奏
 

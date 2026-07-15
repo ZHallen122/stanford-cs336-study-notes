@@ -14,6 +14,11 @@ description: 集中解释讲义中反复使用的维度名和数学符号。
 | `K` / output dimension | 线性变换的输出维度 |
 | `H` / heads | attention head 数量 |
 | `d_head` | 单个 attention head 的维度 |
+| `H_q` / query heads | query 的 head 数量 |
+| `H_kv` / KV heads | key 和 value 的 head 数量；GQA/MQA 中可少于 `H_q` |
+| `d_ff` / feed-forward dimension | FFN 内部扩展后的宽度 |
+| `L` / layers | 堆叠的 Transformer block 数量 |
+| `W` / attention window | sliding-window attention 中每个位置可读取的局部范围 |
 
 ## 典型 shape
 
@@ -23,6 +28,9 @@ description: 集中解释讲义中反复使用的维度名和数学符号。
 | embeddings / hidden states | `(B, T, D)` |
 | vocabulary logits | `(B, T, V)` |
 | attention scores（单层多头） | `(B, H, T, T)` |
+| query / key / value（MHA） | `(B, H, T, d_head)` |
+| query / key / value（GQA） | Q 为 `(B, H_q, T, d_head)`；K/V 为 `(B, H_kv, T, d_head)` |
+| FFN 中间 activation | `(B, T, d_ff)` |
 | 线性变换 `X @ W` | `(B, D) @ (D, K) → (B, K)` |
 
 ## 阅读规则
