@@ -1,0 +1,778 @@
+---
+title: 02 · PyTorch 与资源核算
+description: 从 tensor、autograd 和 nn.Module 一路搭到训练循环，并用内存与 FLOPs 判断模型是否跑得动。
+sidebar:
+  badge:
+    text: 完整讲义
+    variant: success
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
+---
+
+import Term from '../../../components/Term.astro';
+import { Aside, Card, CardGrid, Steps } from '@astrojs/starlight/components';
+import trainingStepResources from '../../../assets/diagrams/training-step-resources.svg';
+
+<Aside type="note" title="对应官方材料">
+本页按 Stanford CS336 Spring 2025 的 [Lecture 2 executable trace](https://cs336.stanford.edu/spring2025-lectures/?trace=var/traces/lecture_02.json) 重组，面向第一次系统接触 PyTorch 的软件工程师。课堂代码、数值与教学边界以[官方 `lecture_02.py`](https://github.com/stanford-cs336/spring2025-lectures/blob/main/lecture_02.py)为准。
+</Aside>
+
+## 这一讲要带走什么
+
+上一讲把文本变成 token ID；这一讲回答：怎样把这些整数送进模型、计算梯度并更新参数，同时提前判断训练在内存和计算上是否可行。
+
+完成本页后，你应该能够：
+
+- 用 shape、dtype、device 和 `requires_grad` 描述一个 tensor。
+- 区分 tensor 的逻辑视图与底层 storage，判断操作是否产生复制。
+- 估算 tensor、参数、gradient、activation 与 optimizer state 的内存。
+- 计算矩阵乘法的 FLOPs，并解释 FLOPs、FLOP/s 与 MFU 的区别。
+- 解释 forward、backward、optimizer step 和清空 gradient 的职责。
+- 阅读一个最小 `nn.Module`、data loader、训练循环与 checkpoint。
+- 说明低精度为什么更快、更省内存，也为什么可能损害稳定性。
+
+当前主线位置：文本 → token IDs → **tensor → model forward → loss → backward → optimizer update**。
+
+:::note[本讲的边界]
+官方 Lecture 2 刻意不讲 Transformer 内部结构，而用线性模型教授训练所需的底层 primitive。Lecture 3 才进入架构；本页也保持同样边界。
+:::
+
+## 开始前需要知道
+
+- **最低门槛**：能阅读 Python 函数、class、循环和 list；不要求已有机器学习经验。
+- **第一次接触 PyTorch**：可以先浏览[PyTorch 与张量](../../foundations/pytorch/)，但不是必读前置。本讲会在首次使用时重新解释 tensor、autograd 和训练循环。
+- **数学最小集**：需要会按 shape 检查矩阵乘法，并知道 gradient 表示“loss 对参数变化的局部敏感度”。忘记时按需查看[矩阵、梯度与链式法则](../../foundations/math/)；不要求先会矩阵微积分。
+- **只阅读本页**：不需要安装依赖或准备 GPU。若要运行代码，先完成[环境准备](../../start-here/setup/)，再按[官方 PyTorch 安装选择器](https://pytorch.org/get-started/locally/)选择与你的操作系统和计算平台匹配的命令；本页小实验可在 CPU 上运行。
+- **第二遍的可选工具**：Part 7 使用 `einops` 和 `jaxtyping` 展示具名维度。没有安装它们时可以先跳过，不影响理解内存、FLOPs、autograd 与训练循环主线。
+- **符号速查**：`B`、`T`、`D` 的含义见[符号与形状速查](../../reference/notation/)；本讲新增的 `K` 表示输出维度。
+
+:::tip[建议阅读方式]
+第一次先抓住两条线：训练一步如何流动，以及每一步新增了哪些内存与计算。第二次再追踪 stride、einsum、初始化和 mixed precision 等实现细节。
+:::
+
+## 给 SDE 的心智模型：执行计划加资源账本
+
+可以把训练程序看成一个有状态的数据处理任务：forward 构造结果和中间状态，backward 根据这些状态生成 gradient，optimizer 再修改长期状态。
+
+但这个类比有一个重要断点：普通业务任务通常不需要保留每个算子的中间值，更不会自动构造反向计算图。训练时的 activation 和 gradient 会让“同一段 forward 代码”在训练模式下比推理模式消耗更多内存。
+
+<CardGrid>
+  <Card title="长期状态">
+    Parameter 与 optimizer state 会跨训练 step 保留；checkpoint 通常至少要保存它们。
+  </Card>
+  <Card title="单步中间状态">
+    Activation 和 gradient 在一步训练中产生；它们受 batch、序列长度和计算图影响。
+  </Card>
+  <Card title="执行工作量">
+    FLOPs 估算做了多少浮点运算；FLOP/s 与 MFU 再把工作量联系到硬件时间。
+  </Card>
+</CardGrid>
+
+<figure class="teaching-figure">
+  <img src={trainingStepResources.src} width={trainingStepResources.width} height={trainingStepResources.height} alt="一个训练 step 从 batch 进入 forward 产生 activation 和 loss，backward 产生 gradient，optimizer step 使用 gradient 与 optimizer state 更新 parameter，随后清空 gradient；旁边将 parameter、activation、gradient、optimizer state 归为内存账，将 forward、backward 归为 FLOPs 账。" />
+  <figcaption>训练循环既是数据流也是状态机。内存账回答“能否装下”，FLOPs 账回答“理论工作量多大”；两者都不能单独预测实际耗时。</figcaption>
+</figure>
+
+## Part 1：先做数量级核算
+
+### 70B 模型要训练多久
+
+对参数量为 $P$、训练 token 数为 $N$ 的 dense Transformer，Lecture 2 使用一阶近似：
+
+$$
+\text{training FLOPs} \approx 6PN
+$$
+
+其中每个 token、每个参数的 forward 约需 2 FLOPs，backward 约需 4 FLOPs。对 70B 参数、15T tokens：
+
+$$
+6 \times 70 \times 10^9 \times 15 \times 10^{12}
+= 6.3 \times 10^{24}\ \text{FLOPs}
+$$
+
+课堂再假设 1,024 张 H100、每张 dense BF16 峰值约 $989.5$ TFLOP/s，实际只达到 50% 峰值。计算结果约为 144 天。
+
+:::caution[这是容量规划，不是承诺]
+`6PN` 忽略了 attention、embedding、输出层、通信、数据等待、故障恢复与硬件差异。它适合在项目开始前排除不可能方案，不适合代替 benchmark。
+:::
+
+### 8 张 80 GB H100 能放多大模型
+
+课堂对 naïve float32 AdamW 使用每参数 16 bytes 的粗略账本：
+
+| 项目 | 每参数字节数 |
+| --- | ---: |
+| Parameter | 4 |
+| Gradient | 4 |
+| AdamW 一阶矩 | 4 |
+| AdamW 二阶矩 | 4 |
+| 合计 | 16 |
+
+于是只算这些长期和梯度状态：
+
+$$
+\frac{8 \times 80\ \text{GB}}{16\ \text{bytes/parameter}}
+\approx 40\ \text{B parameters}
+$$
+
+这还没有计算 activation、临时 buffer、CUDA context 和碎片，也没有给 batch 留空间。因此 40B 是明显偏乐观的上界，不是可直接训练的配置。
+
+:::note[为什么先算这两题]
+资源核算的价值不是得到特别精确的小数，而是在写完整系统前发现数量级错误，并明确哪些假设最值得通过实验替换。
+:::
+
+## Part 2：Tensor 是带执行语义的数组
+
+### 四个必查属性
+
+<Term term="tensor" slug="tensor" definition="带 shape、dtype、device 和自动求导信息的多维数值容器。">Tensor</Term> 存储 parameter、gradient、optimizer state、输入数据和 activation。调试时至少检查：
+
+```python
+import torch
+
+x = torch.zeros(2, 3, dtype=torch.float32, device="cpu")
+x.requires_grad_(True)
+
+print({
+    "shape": tuple(x.shape),       # (2, 3)
+    "dtype": x.dtype,             # torch.float32
+    "device": x.device,           # cpu
+    "requires_grad": x.requires_grad,  # True
+})
+```
+
+这四项分别回答“有多少值、每个值怎样表示、值存在哪里、是否参与 autograd”。只打印 tensor 内容，往往会漏掉真正的 bug。
+
+### 创建与初始化不是一回事
+
+`torch.zeros`、`torch.ones` 和 `torch.randn` 会写入初值；`torch.empty` 只分配空间，内容未初始化。
+
+```python
+x = torch.empty(4, 8)
+torch.nn.init.trunc_normal_(x, mean=0, std=1, a=-2, b=2)
+```
+
+`empty` 适合“马上由自定义初始化覆盖全部元素”的场景。若代码在覆盖前读取它，得到的不是随机样本，而是未定义的旧内存内容。
+
+## Part 3：第一本账——内存
+
+### Tensor 内存公式
+
+一个 dense tensor 的 payload 大小是：
+
+$$
+\text{bytes} = \text{numel} \times \text{element\_size}
+$$
+
+```python
+x = torch.zeros(4, 8, dtype=torch.float32)
+
+assert x.numel() == 32
+assert x.element_size() == 4
+assert x.numel() * x.element_size() == 128
+```
+
+这只计算元素 storage，不包括 Python 对象、allocator metadata、缓存与对齐。对大 tensor，它是很好的一阶近似；对大量小 tensor，额外开销更值得关注。
+
+### 为什么 dtype 改变成本与风险
+
+<Term term="dtype" slug="dtype" definition="tensor 每个元素的数值格式；它决定单元素字节数、动态范围、精度和可用硬件路径。">Dtype</Term> 不是文件格式标签，而是数值和执行契约。
+
+| Dtype | 每元素 | 主要特点 | 训练风险 |
+| --- | ---: | --- | --- |
+| `float32` / FP32 | 4 bytes | 范围与精度都较宽，常作稳定基线 | 内存与带宽成本高 |
+| `float16` / FP16 | 2 bytes | 精度较低，动态范围也明显更窄 | 小值可能 underflow，大值可能 overflow |
+| `bfloat16` / BF16 | 2 bytes | 与 FP32 使用相同指数位数，动态范围接近 FP32 | 有效精度低于 FP16，但通常更易训练 |
+| FP8 | 1 byte | 更低内存与更高潜在吞吐，需要硬件和缩放策略支持 | 范围或精度更受限，不能盲目全局替换 |
+
+官方课堂用 `1e-8` 展示 FP16 下溢为 0，而 BF16 仍可表示非零值。BF16 的优势是动态范围，不是“和 FP32 一样精确”。
+
+```python
+tiny_fp16 = torch.tensor([1e-8], dtype=torch.float16)
+tiny_bf16 = torch.tensor([1e-8], dtype=torch.bfloat16)
+
+assert tiny_fp16.item() == 0
+assert tiny_bf16.item() != 0
+```
+
+<details>
+<summary>第二遍再看：H100 上两种 FP8 格式</summary>
+
+官方课堂进一步区分 H100 支持的两种 FP8：E4M3 用更多 mantissa bits 换取较好精度，课堂给出的范围约为 `[-448, 448]`；E5M2 用更多 exponent bits 换取更大范围，约为 `[-57344, 57344]`。
+
+它们不是“同一种 FP8 的两个名字”。选择格式还要配合缩放、算子支持与稳定性验证；第一次阅读记住“更低 bit 数意味着更强的范围/精度取舍”即可。
+
+</details>
+
+### 训练内存的四类对象
+
+| 类别 | 何时存在 | 主要随什么增长 |
+| --- | --- | --- |
+| Parameter | 跨 step | 模型参数量 |
+| Activation | forward 产生，backward 需要部分保留 | batch、序列长度、层数、隐藏维度 |
+| Gradient | backward 产生 | 可训练参数量 |
+| Optimizer state | optimizer 跨 step 保存 | 参数量与优化器算法 |
+
+只说“模型有 7B 参数，所以 BF16 需要 14 GB”只算了 parameter。训练通常还要容纳 gradient、optimizer state 和 activation；推理则可能增加 KV cache 等另一套状态。
+
+## Part 4：Storage、stride、view 与复制
+
+### Tensor 不是嵌套 Python list
+
+PyTorch tensor 可以理解为“指向一段 storage 的引用 + 描述如何索引它的 metadata”。metadata 包括 shape、stride 和 storage offset。
+
+对一个连续的 `(4, 4)` 矩阵，stride 通常为 `(4, 1)`：移动到下一行跨 4 个元素，移动到下一列跨 1 个元素。
+
+```python
+x = torch.arange(16).view(4, 4)
+assert x.stride() == (4, 1)
+assert x[1, 2].item() == 1 * 4 + 2
+```
+
+### View 共享 storage
+
+切片、`view` 和 `transpose` 在条件允许时只创建新 metadata，不复制 payload。修改一个 view，可能让另一个 tensor 的值也改变。
+
+```python
+x = torch.tensor([[1.0, 2, 3], [4, 5, 6]])
+y = x.transpose(0, 1)
+
+x[0, 0] = 100
+assert y[0, 0].item() == 100
+assert not y.is_contiguous()
+```
+
+`transpose` 后的逻辑顺序通常不是连续存储。调用 `contiguous()` 会生成按新顺序排列的副本，消耗额外时间与内存。
+
+:::caution[“改 shape”不保证免费]
+`reshape` 会在可能时返回 view，在必要时复制；因此不要仅凭函数名判断成本。检查 stride、storage 共享关系，并在真实尺寸上测量。
+:::
+
+### 类比在哪里失效
+
+数据库 view 常让人想到“只读查询定义”；tensor view 却可能允许写入共享 storage。更准确的类比是 C/C++ 中带 shape 和 stride 的别名指针：便宜，但必须管理 aliasing 和布局假设。
+
+## Part 5：Device 与数据移动
+
+Tensor 默认在 CPU memory。要使用 GPU 的并行计算，参与同一算子的 tensor 通常必须位于兼容 device：
+
+```python
+device = "cuda" if torch.cuda.is_available() else "cpu"
+x = torch.zeros(32, 32, device=device)
+```
+
+把 CPU tensor 复制到 GPU 不只是 `.to("cuda")` 这一行代码；它经过主机内存、总线和 GPU memory。频繁搬小 tensor 可能让数据移动与 launch overhead 吞掉计算收益。
+
+### Pinned memory 的作用
+
+普通 CPU tensor 使用 pageable memory。将 batch 放进 pinned memory 后，再配合 `non_blocking=True`，可以为异步 host-to-device copy 创造条件：
+
+```python
+batch = batch.pin_memory()
+batch = batch.to("cuda", non_blocking=True)
+```
+
+“非阻塞”不自动等于复制已经和计算重叠；还需要正确的 stream、生命周期和流水线。pinned memory 也是有限资源，不应把整个数据集全部 pin 住。
+
+## Part 6：第二本账——FLOPs
+
+### FLOPs 与 FLOP/s 不是一回事
+
+- <Term term="FLOPs" slug="flops" definition="一次任务执行的浮点运算数量，用来估算工作量。">FLOPs</Term> 中的 `s` 表示复数 operations。
+- FLOP/s 表示硬件每秒能完成多少浮点运算，是速率。
+- 实际 wall-clock time 还受数据移动、kernel、通信、同步和利用率影响。
+
+这类似“请求总数”与“每秒请求数”的区别。一个是工作量，一个是处理能力。
+
+### 逐元素操作与因果 mask
+
+逐元素操作通常让输出保持相同 shape，计算量随元素数线性增长。官方课堂用 `triu`（upper triangle，上三角）连接到后续 attention：
+
+```python
+T = 4
+blocked = torch.ones(T, T, dtype=torch.bool).triu(diagonal=1)
+
+assert blocked.shape == (T, T)
+```
+
+这里对角线上方的 `True` 表示“未来位置不可见”。真正计算 attention 时，还要把这个布尔 mask 转成当前实现期望的语义，例如用 `-inf` 屏蔽对应 logits；不要仅凭三角形方向猜测 `True` 代表允许还是禁止。
+
+### 矩阵乘法为什么最重要
+
+令：
+
+- `x` shape 为 `(B, D)`；
+- `w` shape 为 `(D, K)`；
+- `y = x @ w` shape 为 `(B, K)`。
+
+每个输出元素要做约 `D` 次乘法与 `D` 次加法，因此：
+
+$$
+\text{matmul FLOPs} \approx 2BDK
+$$
+
+```python
+B, D, K = 16, 32, 2
+x = torch.ones(B, D)
+w = torch.ones(D, K)
+y = x @ w
+
+assert y.shape == (B, K)
+flops = 2 * B * D * K  # 2,048 FLOPs
+```
+
+逐元素操作在 `(m, n)` tensor 上通常是 $O(mn)$；大矩阵乘法是 $O(mnp)$。维度足够大时，语言模型的大部分计算通常由矩阵乘法主导。
+
+### Batch 维会自动扩展矩阵乘法
+
+若 `x` 是 `(B, T, H, D)`，`w` 是 `(D, K)`，`x @ w` 的输出是 `(B, T, H, K)`。前面三维枚举独立矩阵乘法，最后两维遵循矩阵规则。
+
+写 shape 时不要只写 `[..., D]`；在教学和 debug 阶段明确 `B`、`T`、`H`，更容易发现把 sequence 与 head 维交换的错误。
+
+### 从 FLOPs 到时间：MFU 测量闭环
+
+硬件规格给出的是特定 dtype 与条件下的理论峰值。要把公式连接到实际时间，按同一口径记录：
+
+| 量 | 怎样得到 |
+| --- | --- |
+| 理论工作量 | 例如 matmul 的 `2 * B * D * K` FLOPs |
+| 实际时间 | 预热、同步后测量多次，报告稳定统计量 |
+| 实际 FLOP/s | `理论工作量 / 实际秒数` |
+| MFU | `实际 FLOP/s / 对应 dtype 的硬件峰值 FLOP/s` |
+
+假设某次工作负载需要 $2.0 \times 10^{12}$ FLOPs，实测用时 `0.004` 秒，则实际吞吐为 $5.0 \times 10^{14}$ FLOP/s。若同一口径的硬件峰值为 $1.0 \times 10^{15}$ FLOP/s：
+
+$$
+\text{MFU} = \frac{5.0 \times 10^{14}}{1.0 \times 10^{15}} = 0.5
+$$
+
+官方课堂把 MFU `≥ 0.5` 视为通常已经不错的结果，尤其当矩阵乘法占主导时。它是经验参照，不是跨硬件排行榜：dtype、稀疏口径、通信是否计入与模型 FLOPs 的估法都必须一致。
+
+:::caution[GPU 计时要显式处理异步执行]
+CUDA kernel launch 通常是异步的。若计时器停止前没有正确同步，测到的可能只是 launch 时间；第一次学习时先理解核算关系，真正 benchmark 再使用 PyTorch profiler、CUDA event 或课程给出的计时工具。
+:::
+
+## Part 7：用名字管理维度
+
+### jaxtyping 是文档，不自动执行检查
+
+官方课堂用 jaxtyping 标注：
+
+```python
+x: Float[torch.Tensor, "batch seq heads hidden"]
+```
+
+这个标注让 shape 意图靠近代码，但单独使用时不会在 runtime 强制验证。仍然需要测试、assert 或额外的类型检查工具。
+
+### einsum 显式写出收缩维
+
+传统写法 `x @ y.transpose(-2, -1)` 很短，但 `-2`、`-1` 容易在 rank 改变后失去含义。einops 的 `einsum` 可以命名每个维度：
+
+```python
+from einops import einsum
+
+scores = einsum(
+    x,
+    y,
+    "batch seq1 hidden, batch seq2 hidden -> batch seq1 seq2",
+)
+```
+
+`hidden` 没出现在输出，因此沿该维求和。输出 shape 是 `(batch, seq1, seq2)`。
+
+### reduce 与 rearrange
+
+- `reduce(x, "batch seq hidden -> batch seq", "sum")` 沿 `hidden` 求和。
+- `rearrange(x, "... (heads hidden) -> ... heads hidden", heads=H)` 把一个复合维拆开。
+
+这些表达式提升可读性，却不会取消真实数据布局的成本。`rearrange` 是否只返回 view，仍取决于 stride 与目标布局。
+
+## Part 8：Autograd 与 backward
+
+### 一个可以手算的 gradient
+
+考虑：
+
+$$
+\hat{y} = x^T w, \qquad L = \frac{1}{2}(\hat{y} - 5)^2
+$$
+
+令 `x = [1, 2, 3]`、`w = [1, 1, 1]`。此时 $\hat{y}=6$，所以：
+
+$$
+\frac{\partial L}{\partial w}
+= (\hat{y}-5)x
+= [1,2,3]
+$$
+
+```python
+x = torch.tensor([1.0, 2, 3])
+w = torch.tensor([1.0, 1, 1], requires_grad=True)
+
+prediction = x @ w
+loss = 0.5 * (prediction - 5).pow(2)
+loss.backward()
+
+assert torch.equal(w.grad, torch.tensor([1.0, 2, 3]))
+```
+
+只有需要 gradient 的 leaf tensor `w` 默认把结果累积到 `.grad`。中间 tensor 的 gradient 默认不会保留；调试时可以显式调用 `retain_grad()`。
+
+### Backward 为什么约是 forward 的两倍
+
+对 `h = x @ w`，backward 通常至少要计算：
+
+- `w.grad`：把输入与上游 gradient 相乘并求和；
+- `x.grad`：把上游 gradient 与权重相乘。
+
+两项都是与原 matmul 同量级的矩阵乘法。因此课堂对参数主导模型使用：
+
+| 阶段 | 每 token、每 parameter 的近似 FLOPs |
+| --- | ---: |
+| Forward | 2 |
+| Backward | 4 |
+| 一次训练 step 合计 | 6 |
+
+这个“backward 约为 forward 两倍”的直觉适合一阶核算。activation checkpointing、自定义 kernel、冻结参数和非矩阵算子都会改变比例。
+
+## Part 9：从 Parameter 到 Module
+
+### Parameter 是被 Module 注册的 tensor
+
+`nn.Parameter` 仍然是 tensor，但把它赋给 `nn.Module` 属性后，会被 `model.parameters()` 和 `state_dict()` 发现。
+
+```python
+from torch import nn
+
+class Linear(nn.Module):
+    def __init__(self, input_dim: int, output_dim: int):
+        super().__init__()
+        scale = input_dim ** -0.5
+        self.weight = nn.Parameter(
+            torch.randn(input_dim, output_dim) * scale
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x @ self.weight
+```
+
+把普通 tensor 放进 Python list，不会自动注册为子模块参数；堆叠层时应使用 `nn.ModuleList` 或其他注册机制。
+
+### 初始化为什么除以 $\sqrt{D}$
+
+若输入和权重元素相互独立、均值为 0、方差量级相近，`D` 项相加会让输出尺度随 $\sqrt{D}$ 增长。将权重标准差缩放为 $1/\sqrt{D}$，可以让输出尺度对输入维度更稳定。
+
+这与 Xavier 初始化的思想相关，但实际 Transformer 还会考虑 activation、residual path、层数与具体参数类型。不要把一个缩放规则机械应用到所有矩阵。
+
+## Part 10：Data loader 与可复现性
+
+### 语言模型数据是整数序列
+
+tokenizer 输出的 token ID 可以按整数数组序列化。数据大于 RAM 时，NumPy `memmap` 让程序按需映射文件片段，而不是一次读入全部语料。
+
+一个 batch 常从不同起点抽取固定长度窗口。若数据长度为 `N`、batch 为 `B`、序列长度为 `T`，输入 shape 是 `(B, T)`。
+
+:::caution[避免越界]
+合法起点必须给后续 `T` 个 token 留空间。训练 next-token prediction 时还常需要第 `T+1` 个 token 作为 target；具体边界以当前 assignment handout 和测试为准。
+:::
+
+### 随机种子是 debug 工具
+
+随机性来自初始化、dropout、batch 抽样和数据顺序。官方课堂同时设置 Python、NumPy 和 PyTorch seed：
+
+```python
+import random
+import numpy as np
+import torch
+
+seed = 0
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
+```
+
+固定 seed 能复现许多问题，但不保证所有 GPU kernel、并行执行或不同硬件完全 bitwise deterministic。记录代码版本、配置、数据版本和硬件同样重要。
+
+## Part 11：Optimizer 是有状态更新器
+
+### 从 SGD 到 Adam
+
+最基本的 stochastic gradient descent (SGD) 更新是：
+
+$$
+w \leftarrow w - \eta g
+$$
+
+其中 $w$ 是 parameter，$g$ 是当前 gradient，$\eta$ 是 learning rate。AdaGrad、RMSProp、momentum 和 Adam 会保存 gradient 的统计量，以不同方式调整更新。
+
+<Term term="optimizer state" slug="optimizer-state" definition="优化器为每个参数跨 step 保存的统计量，例如 Adam 的一阶矩和二阶矩。">Optimizer state</Term> 会占用显存，也必须进入断点恢复计划。AdamW 通常为每个 parameter 保存两个 FP32 状态 tensor，这就是 naïve 账本中的额外 8 bytes/parameter。
+
+### Gradient 默认累加
+
+PyTorch 的 `loss.backward()` 把新 gradient 加到已有 `.grad`，而不是覆盖。典型顺序是：
+
+```python
+loss.backward()
+optimizer.step()
+optimizer.zero_grad(set_to_none=True)
+```
+
+`set_to_none=True` 可以少一次清零写入，并让“本步从未得到 gradient”与“gradient 恰好为 0”更容易区分。若刻意做 gradient accumulation，则需要明确累计多少 microbatch、何时 step，以及 loss 是否正确缩放。
+
+## Part 12：完整训练循环
+
+<Steps>
+1. 从数据中构造输入与 target，并移动到 model 所在 device。
+2. 执行 forward，得到 prediction 或 logits，再计算标量 loss。
+3. 调用 `loss.backward()`，沿计算图累积 parameter gradient。
+4. 调用 `optimizer.step()`，读取 gradient 和 optimizer state，更新 parameter。
+5. 清空 gradient，记录指标，并按计划验证与保存 checkpoint。
+</Steps>
+
+最小骨架是：
+
+```python
+for step in range(num_train_steps):
+    x, target = get_batch()
+
+    prediction = model(x)
+    loss = loss_fn(prediction, target)
+
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+```
+
+这段骨架说明顺序，不是生产训练器。实际系统还需要 evaluation mode、scheduler、gradient clipping、日志、异常检测、分布式同步和恢复逻辑。
+
+:::tip[调参也要保持实验可比]
+官方课堂用不同 learning rate 对比最小训练运行。一次只改变一个主要变量，并记录 seed、batch、step 数和 loss 曲线；否则“更快下降”可能来自不同随机 batch，而不是 learning rate。
+:::
+
+### 一步训练的合并账本
+
+对参数量 `P`、单步处理 token 数 `N_step` 的参数主导模型，可先写：
+
+```text
+训练状态内存 ≈ parameter + gradient + optimizer state + activation
+单步计算量   ≈ 6 × P × N_step FLOPs
+```
+
+前一行决定是否容易 OOM；后一行结合实测 FLOP/s 才能估算 step time。二者共享 `P`，却不能互相替代。
+
+### 把四本内存账放进同一个小模型
+
+沿用官方课堂的简化 deep linear model：隐藏维度 `D = 4`、两个 `D → D` 层，再接一个 `D → 1` 输出层；batch size `B = 2`。
+
+| 项目 | 元素数 |
+| --- | ---: |
+| Parameter | `2 × D × D + D = 36` |
+| Activation（课堂简化口径） | `B × D × 2 = 16` |
+| Gradient | 与 parameter 相同，`36` |
+| AdaGrad state | 每参数一个累计平方梯度，`36` |
+
+全部使用 FP32 时，这四项的 payload 是：
+
+$$
+4 \times (36 + 16 + 36 + 36) = 496\ \text{bytes}
+$$
+
+按参数主导的一阶近似，单步 forward + backward 计算量为：
+
+$$
+6 \times B \times P = 6 \times 2 \times 36 = 432\ \text{FLOPs}
+$$
+
+这个数字只用于练习账本：它省略输出 activation、loss、临时 tensor、allocator metadata 与框架开销。在真实小模型上，这些省略项反而可能比矩阵计算更显眼。
+
+## Part 13：Checkpoint 与 mixed precision
+
+### Checkpoint 保存恢复所需状态
+
+<Term term="checkpoint" slug="checkpoint" definition="训练中周期保存的可恢复状态快照，至少通常包含模型和优化器状态。">Checkpoint</Term> 的最小内容：
+
+```python
+checkpoint = {
+    "model": model.state_dict(),
+    "optimizer": optimizer.state_dict(),
+    "step": step,
+}
+torch.save(checkpoint, "checkpoint.pt")
+```
+
+恢复时，先创建兼容的 model 与 optimizer，再分别加载状态：
+
+```python
+checkpoint = torch.load("checkpoint.pt", map_location=device)
+model.load_state_dict(checkpoint["model"])
+optimizer.load_state_dict(checkpoint["optimizer"])
+start_step = checkpoint["step"] + 1
+```
+
+`map_location` 控制 tensor 加载到哪个 device；它不会替你检查模型结构、数据版本或训练配置是否匹配。
+
+若要真正连续恢复，通常还要保存 scheduler、random number generator state、data position、scaler 和训练配置。只恢复模型参数会丢失 optimizer 的动量历史，轨迹不再连续。
+
+:::tip[把崩溃当正常事件]
+长训练迟早会遇到进程、机器、网络或数据故障。checkpoint 的问题不是“要不要保存”，而是恢复点目标、写入原子性、保留策略和恢复演练。
+:::
+
+### Mixed precision 是选择性降精度
+
+<Term term="mixed precision" slug="mixed-precision" definition="在同一次训练中按算子和状态选择不同数值精度，以平衡吞吐、内存与稳定性。">Mixed precision</Term> 不是把所有 tensor 全部转成 16-bit。
+
+典型思路是让适合 Tensor Core 的 forward 算子使用 BF16/FP16，同时让需要范围或累积精度的状态保持 FP32。PyTorch 提供 Automatic Mixed Precision (AMP)，但具体 autocast 与 gradient scaling 策略取决于 dtype、device 和版本，应以当前官方文档为准。
+
+:::caution[低精度失败不一定立刻报错]
+问题可能表现为 loss 缓慢偏离、gradient 变成 0、偶发 Inf/NaN，或最终质量下降。比较吞吐时，也要同时检查数值与训练曲线。
+:::
+
+## Part 14：工程取舍与常见失败
+
+### “理论 FLOPs 更少，所以一定更快”
+
+不成立。小矩阵、kernel launch、非连续复制、CPU/GPU 同步、数据等待和通信都可能主导 wall-clock time。FLOPs 是工作量模型，benchmark 才是当前实现的证据。
+
+### “View 不分配 payload，所以可以随便用”
+
+View 会制造 aliasing，也可能产生不连续布局。下游算子可能隐式复制或选择较慢 kernel；原地修改还可能破坏 autograd 需要的值。
+
+### “BF16 动态范围大，所以和 FP32 一样安全”
+
+BF16 保留 FP32 的指数宽度，却只有更少的尾数位。它降低 overflow/underflow 风险，不消除舍入误差，也不保证每个算子都适合低精度。
+
+### “模型参数能装下，训练就能启动”
+
+训练还需要 gradient、optimizer state、activation 和临时 buffer。batch 或 sequence length 增加时，parameter 内存不变，activation 内存通常会增长。
+
+### “设了 seed，就完全可复现”
+
+Seed 只固定伪随机序列的起点。并行归约顺序、非确定 kernel、数据加载 worker、软件版本和硬件仍可能带来差异。
+
+## Part 15：CPU 小实验
+
+这些实验不依赖 GPU，适合在开始 A1 前建立直觉。
+
+### 实验 A：比较 view 与 copy
+
+```python
+import torch
+
+x = torch.arange(12).view(3, 4)
+y = x.transpose(0, 1)
+z = y.contiguous()
+
+print("x", x.shape, x.stride(), x.is_contiguous())
+print("y", y.shape, y.stride(), y.is_contiguous())
+print("z", z.shape, z.stride(), z.is_contiguous())
+
+x[0, 0] = 999
+print(y[0, 0].item(), z[0, 0].item())
+```
+
+预测：`y` 会看到修改，`z` 不会，因为 `z` 已复制出独立 storage。
+
+### 实验 B：验证 gradient 累加
+
+```python
+w = torch.tensor([2.0], requires_grad=True)
+
+(w ** 2).backward()
+print(w.grad.item())  # 4
+
+(w ** 2).backward()
+print(w.grad.item())  # 8，不是 4
+
+w.grad = None
+```
+
+这个行为是 gradient accumulation 的基础，也是在忘记 `zero_grad()` 时最常见的 bug。
+
+### 实验 C：做一张 dtype 内存表
+
+```python
+for dtype in [torch.float32, torch.float16, torch.bfloat16]:
+    x = torch.empty(1_000_000, dtype=dtype)
+    mib = x.numel() * x.element_size() / 1024**2
+    print(dtype, f"{mib:.2f} MiB")
+```
+
+然后用 `torch.finfo(dtype)` 比较最大值、最小 normal 值与 epsilon。不要把内存减半误读成“数值能力只减半”。
+
+## 理解检查
+
+### 第一层：能否说清楚
+
+1. Tensor 的 shape、dtype、device 和 `requires_grad` 分别回答什么问题？
+2. Parameter、activation、gradient 与 optimizer state 中，哪些通常跨 step 保留？
+3. FLOPs 与 FLOP/s 有什么区别？
+4. 为什么 `transpose` 常常不复制数据，却可能让 tensor 变成 non-contiguous？
+5. `loss.backward()` 和 `optimizer.step()` 各自改变什么？
+
+### 第二层：能否推导
+
+6. 一个 `(1024, 4096)` 的 BF16 tensor，payload 约占多少 MiB？
+7. `(B, D) @ (D, K)` 的输出 shape 与近似 FLOPs 各是什么？
+8. naïve FP32 AdamW 不算 activation 时，7B parameters 约需多少 GB？
+9. 若第二次调用 `backward()` 前没有清空 `.grad`，会发生什么？
+10. 为什么训练 FLOPs 常用 `6PN`，而 forward 只用约 `2PN`？
+
+### 第三层：能否做工程判断
+
+11. 一个优化把 FLOPs 降低 20%，wall-clock time 却变慢。你会优先测哪些数据？
+12. 模型一增大 batch 就 OOM，但 parameter 数没有变化。最可能增长的是哪类内存？
+13. 从 checkpoint 恢复后 loss 突然跳变，但模型权重加载成功。还可能漏了哪些状态？
+14. BF16 训练比 FP32 快很多，但最终 loss 更差。怎样区分实现 bug、数值问题与随机波动？
+
+<details>
+<summary>查看计算题答案</summary>
+
+6. `1024 × 4096 × 2 / 1024² = 8 MiB`。
+
+7. 输出是 `(B, K)`，近似 `2BDK` FLOPs。
+
+8. 每参数 16 bytes，所以约 `7 × 10⁹ × 16 = 112 GB`；这还不含 activation 和额外开销。
+
+9. 新 gradient 会累加到已有 `.grad`，而不是覆盖。
+
+10. 对参数主导的矩阵计算，forward 约需 2，backward 为输入和参数计算 gradient 约需 4，合计约 6 FLOPs/token/parameter。
+
+</details>
+
+## 与 Assignment 1 的连接
+
+Lecture 2 给的是训练 primitive 和资源核算方法，不是 A1 的提交答案。进入 A1 模型部分前，建议你能独立完成：
+
+- 为每个模块写出输入、输出 shape、dtype 与 device。
+- 用 `sum(p.numel() for p in model.parameters())` 检查参数量。
+- 区分 parameter、activation、gradient 与 optimizer state 的成本。
+- 用一个极小 deterministic batch 验证 forward、loss、backward 和 step。
+- 保存并恢复自己的训练状态，然后确认下一步可以继续。
+- 保留 correctness-first 版本，再用 profiler 验证优化是否真的更快。
+
+继续阅读[本站 A1 路线](../../assignments/a1/)与[官方 Assignment 1 handout](https://github.com/stanford-cs336/assignment1-basics/blob/main/cs336_spring2025_assignment1_basics.pdf)。遵守 Spring 2025 课程 AI policy：AI 可以帮助解释高层概念或低层编程问题，不能直接替你完成可提交解答。
+
+## 本讲小结
+
+- Tensor 是 storage 加 metadata 和执行语义；shape、dtype、device、gradient 状态必须一起看。
+- 内存至少分 parameter、activation、gradient、optimizer state 四本子账；“参数能装下”远远不够。
+- View 可能共享 storage；`contiguous()` 可能复制。布局会影响正确性、内存和性能。
+- 大矩阵乘法约需 `2BDK` FLOPs；参数主导训练的一阶估算是 `6PN`。
+- FLOPs 不是运行时间。还要结合硬件 dtype 峰值、实测 FLOP/s、数据移动与通信。
+- Backward 产生 gradient，optimizer 使用 gradient 和内部状态更新 parameter；gradient 默认累加。
+- Checkpoint 与 mixed precision 都是训练系统设计：前者管理故障恢复，后者平衡吞吐、内存和稳定性。
+
+## 官方材料与延伸阅读
+
+- [Lecture 2 executable trace](https://cs336.stanford.edu/spring2025-lectures/?trace=var/traces/lecture_02.json)
+- [Lecture 2 Python source](https://github.com/stanford-cs336/spring2025-lectures/blob/main/lecture_02.py)
+- [CS336 Spring 2025 archived course page](https://cs336.stanford.edu/spring2025/)
+- [PyTorch tensor documentation](https://docs.pytorch.org/docs/stable/tensors.html)
+- [PyTorch tensor view documentation](https://docs.pytorch.org/docs/stable/tensor_view.html)
+- [PyTorch Automatic Mixed Precision documentation](https://docs.pytorch.org/docs/stable/amp.html)
+- [einops basics tutorial](https://einops.rocks/1-einops-basics/)
+- [Mixed Precision Training paper](https://arxiv.org/abs/1710.03740)
+- [ZeRO: Memory Optimizations Toward Training Trillion Parameter Models](https://arxiv.org/abs/1910.02054)
+
+笔记最后对照：CS336 Spring 2025 Lecture 2，2026-07-14。

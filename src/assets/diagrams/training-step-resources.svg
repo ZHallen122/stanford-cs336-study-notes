@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1020" role="img" aria-labelledby="title desc">
+  <title id="title">训练一步的数据流与资源账</title>
+  <desc id="desc">Batch 进入 forward，产生 activation 和 loss；backward 读取 activation 并产生 gradient；optimizer step 读取 gradient 与 optimizer state，更新 parameter；最后清空 gradient。右侧说明 parameter、activation、gradient、optimizer state 属于内存账，forward 和 backward 属于 FLOPs 账。</desc>
+  <defs>
+    <style>
+      .bg{fill:#fbfaf6}.panel{fill:#fff;stroke:#c7d3d0;stroke-width:3}.state{fill:#dff1ec;stroke:#176b61;stroke-width:3}.work{fill:#fff0dd;stroke:#b86420;stroke-width:3}.title{font:700 32px system-ui,sans-serif;fill:#16221f}.heading{font:700 25px system-ui,sans-serif;fill:#16221f}.body{font:500 20px system-ui,sans-serif;fill:#263b36}.small{font:500 18px system-ui,sans-serif;fill:#53635f}.arrow{stroke:#176b61;stroke-width:5;fill:none;marker-end:url(#arrowhead)}.dashed{stroke:#53635f;stroke-width:3;stroke-dasharray:9 8;fill:none}
+    </style>
+    <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#176b61"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="800" height="1020" rx="28"/>
+  <text class="title" x="40" y="58">一个训练 step：状态如何流动</text>
+
+  <rect class="panel" x="55" y="100" width="430" height="100" rx="18"/>
+  <text class="heading" x="270" y="141" text-anchor="middle">1 · Batch</text>
+  <text class="body" x="270" y="175" text-anchor="middle">输入与 target · shape (B, T)</text>
+
+  <path class="arrow" d="M270 200 V245"/>
+  <rect class="work" x="55" y="250" width="430" height="120" rx="18"/>
+  <text class="heading" x="270" y="292" text-anchor="middle">2 · Forward</text>
+  <text class="body" x="270" y="327" text-anchor="middle">读取 parameter，产生 loss</text>
+  <text class="small" x="270" y="354" text-anchor="middle">保留 backward 需要的 activation</text>
+
+  <path class="arrow" d="M270 370 V415"/>
+  <rect class="work" x="55" y="420" width="430" height="120" rx="18"/>
+  <text class="heading" x="270" y="462" text-anchor="middle">3 · Backward</text>
+  <text class="body" x="270" y="497" text-anchor="middle">沿计算图传播导数</text>
+  <text class="small" x="270" y="524" text-anchor="middle">把结果累积到 parameter.grad</text>
+
+  <path class="arrow" d="M270 540 V585"/>
+  <rect class="state" x="55" y="590" width="430" height="120" rx="18"/>
+  <text class="heading" x="270" y="632" text-anchor="middle">4 · Optimizer step</text>
+  <text class="body" x="270" y="667" text-anchor="middle">读取 gradient 与 optimizer state</text>
+  <text class="small" x="270" y="694" text-anchor="middle">更新 parameter 与 optimizer state</text>
+
+  <path class="arrow" d="M270 710 V755"/>
+  <rect class="panel" x="55" y="760" width="430" height="100" rx="18"/>
+  <text class="heading" x="270" y="801" text-anchor="middle">5 · 清空 gradient</text>
+  <text class="body" x="270" y="835" text-anchor="middle">准备下一步；gradient 默认会累加</text>
+
+  <rect class="state" x="530" y="100" width="220" height="365" rx="18"/>
+  <text class="heading" x="640" y="144" text-anchor="middle">内存账</text>
+  <text class="body" x="555" y="192">• Parameter</text>
+  <text class="body" x="555" y="237">• Activation</text>
+  <text class="body" x="555" y="282">• Gradient</text>
+  <text class="body" x="555" y="327">• Optimizer</text>
+  <text class="body" x="575" y="358">state</text>
+  <path class="dashed" d="M550 387 H730"/>
+  <text class="small" x="640" y="423" text-anchor="middle">回答：能否装下？</text>
+
+  <rect class="work" x="530" y="500" width="220" height="240" rx="18"/>
+  <text class="heading" x="640" y="544" text-anchor="middle">FLOPs 账</text>
+  <text class="body" x="555" y="594">• Forward</text>
+  <text class="body" x="555" y="639">• Backward</text>
+  <path class="dashed" d="M550 670 H730"/>
+  <text class="small" x="640" y="706" text-anchor="middle">回答：做多少</text>
+  <text class="small" x="640" y="731" text-anchor="middle">浮点运算？</text>
+
+  <rect class="panel" x="55" y="910" width="695" height="70" rx="18"/>
+  <text class="body" x="402" y="953" text-anchor="middle">实际耗时还取决于 FLOP/s、数据移动、通信与等待</text>
+</svg>

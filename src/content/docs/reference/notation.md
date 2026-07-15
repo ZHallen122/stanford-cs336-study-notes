@@ -11,6 +11,7 @@ description: 集中解释讲义中反复使用的维度名和数学符号。
 | `T` / sequence length | 每个样本的 token 数 |
 | `V` / vocabulary size | 词表大小 |
 | `D` / `d_model` | 模型隐藏表示维度 |
+| `K` / output dimension | 线性变换的输出维度 |
 | `H` / heads | attention head 数量 |
 | `d_head` | 单个 attention head 的维度 |
 
@@ -22,6 +23,7 @@ description: 集中解释讲义中反复使用的维度名和数学符号。
 | embeddings / hidden states | `(B, T, D)` |
 | vocabulary logits | `(B, T, V)` |
 | attention scores（单层多头） | `(B, H, T, T)` |
+| 线性变换 `X @ W` | `(B, D) @ (D, K) → (B, K)` |
 
 ## 阅读规则
 

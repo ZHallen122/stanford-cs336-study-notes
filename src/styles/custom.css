@@ -90,6 +90,13 @@ body {
   font-size: 0.9em;
 }
 
+.sl-markdown-content .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 0.15rem;
+}
+
 .sl-markdown-content a:not([class]) {
   text-underline-offset: 0.2em;
   text-decoration-thickness: 0.09em;

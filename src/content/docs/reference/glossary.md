@@ -20,6 +20,10 @@ tableOfContents:
 
 **注意力机制。** 根据当前 token 与上下文其他 token 的相关程度，组合信息的一种计算。它不是人类意识中的“注意”。
 
+## Autograd
+
+**自动求导系统。** PyTorch 记录 tensor 操作的依赖关系，并用链式法则为需要求导的 tensor 计算 gradient。它计算 gradient，但不负责执行 optimizer 更新。
+
 ## Backpropagation
 
 **反向传播。** 从 loss 出发，利用链式法则计算每个参数梯度的过程。
@@ -32,6 +36,14 @@ tableOfContents:
 
 **Byte Pair Encoding。** 从小单位开始，反复合并语料中最常见相邻对的 tokenizer 训练方法。
 
+## BF16 / bfloat16
+
+**Brain floating point 16-bit。** 占 2 bytes 的浮点格式，指数位数与 FP32 相同，因此动态范围接近 FP32，但有效精度更低。它常用于加速深度学习训练，不代表所有计算都能安全降为 16-bit。
+
+## Checkpoint
+
+**训练状态快照。** 为故障恢复或后续继续训练而保存的状态。除了模型 parameter，连续恢复通常还需要 optimizer、step、随机数、data position 和 scheduler 等状态。
+
 ## Context window
 
 **上下文窗口。** 模型一次 forward 能直接参考的 token 范围。更长的窗口会增加内存与计算成本，并不保证模型能同样有效地利用所有位置。
@@ -39,6 +51,14 @@ tableOfContents:
 ## Embedding
 
 **嵌入。** 把离散 ID 映射成连续向量。向量的各维通常不能单独用固定自然语言命名。
+
+## Dtype
+
+**数据类型。** Tensor 每个元素的数值格式，例如 FP32、FP16 或 BF16。它决定单元素字节数、动态范围、精度，以及硬件可使用的计算路径。
+
+## Device
+
+**执行设备。** Tensor 的 storage 与算子所在位置，例如 CPU 或 CUDA GPU。参与同一算子的 tensor 通常需要位于相容 device。
 
 ## FLOPs
 
@@ -60,9 +80,25 @@ tableOfContents:
 
 衡量预测与训练目标差距的标量。训练优化 loss，但低训练 loss 不自动等于真实场景表现好。
 
+## MFU
+
+**Model FLOPs Utilization，模型浮点运算利用率。** 实际完成的模型 FLOP/s 与硬件理论峰值 FLOP/s 的比值。它依赖 dtype、工作负载与核算口径，不能跨配置盲目比较。
+
+## Mixed precision
+
+**混合精度训练。** 在同一次训练中让不同算子或状态使用不同浮点格式，以平衡吞吐、内存与数值稳定性。它不是把整个模型无条件转换为低精度。
+
+## Module
+
+**PyTorch 模型组件。** `nn.Module` 把 forward 计算、子模块、parameter 和 buffer 组织在一起，并提供训练/推理模式切换与状态管理接口。
+
 ## Optimizer
 
 **优化器。** 根据参数的 gradient 和内部状态计算参数更新的算法，例如 AdamW。它决定怎样走，但训练目标由 loss 定义。
+
+## Optimizer state
+
+**优化器状态。** 优化器为每个 parameter 跨训练 step 保存的统计量，例如 Adam 的一阶矩和二阶矩。它会占用训练内存，并需要随 checkpoint 保存才能连续恢复。
 
 ## Parameter
 
@@ -71,6 +107,14 @@ tableOfContents:
 ## Tensor
 
 **张量。** 多维数值数组；在 PyTorch 中还带有 dtype、device 和梯度追踪等执行信息。
+
+## State dict
+
+**具名状态映射。** PyTorch Module 或 optimizer 暴露的可保存状态字典。Module 的 state dict 通常包含 parameter 和持久 buffer；完整训练恢复还需要 optimizer 与训练进度等状态。
+
+## View
+
+**张量视图。** 与另一个 tensor 共享底层 storage、但使用不同 shape、stride 或 offset 解读数据的 tensor。创建 view 通常不复制 payload，但写入可能影响所有别名，后续算子也可能因不连续布局而复制。
 
 ## Token
 
