@@ -80,6 +80,10 @@ tableOfContents:
 
 **推理。** 使用已经训练的参数生成或评分，不再通过训练循环更新参数。
 
+## Expert parallelism
+
+**专家并行。** 把 MoE experts 分布到不同设备，并通过 all-to-all 把 token activation 发送到所选 expert。它扩大可容纳的参数池，也把路由负载与网络通信带进关键路径。
+
 ## KV cache
 
 **键值缓存。** 自回归生成时，为每层保存历史 token 的 key 和 value，避免生成下一个 token 时重算完整前缀。它通常随 batch、上下文长度、层数、KV head 数和 head dimension 线性增长。
@@ -87,6 +91,14 @@ tableOfContents:
 ## Logits
 
 模型对每个候选类别或 token 给出的未归一化分数。经过 softmax 后可转成概率分布。
+
+## Linear attention
+
+**线性注意力。** 用可结合的 feature-map / kernel 形式或 recurrent state 避免显式建立完整 `T × T` score matrix。它改变或近似标准 softmax attention，不是对原公式无损地移动括号。
+
+## Load balancing
+
+**负载均衡。** 在 MoE 中抑制 token 过度集中到少数 experts，使设备工作量、capacity overflow 与专家训练机会保持在可接受范围。完全均匀并非唯一目标，因为过强约束可能妨碍 specialization。
 
 ## Loss
 
@@ -107,6 +119,18 @@ tableOfContents:
 ## MQA
 
 **Multi-Query Attention，多查询注意力。** 多个 query heads 共享单个 key head 和 value head，以显著缩小生成期 KV cache 与内存带宽需求；相比 GQA，它的压缩更激进，也可能带来更大质量风险。
+
+## Mixture of Experts
+
+**混合专家模型（MoE）。** Router 为每个 token 选择少量 expert 子网络的条件计算结构。模型可以拥有很多总参数，但单个 token 通常只激活 top-k experts；主要难点是离散路由、负载偏斜、capacity 与跨设备通信。
+
+## Multi-head Latent Attention
+
+**多头潜在注意力（MLA）。** 先把 hidden state 压到较窄的 latent，再由 latent 生成 attention 的 key 和 value，使生成期主要缓存较小 latent。它减少 KV cache 宽度，不是 MoE 的 expert routing。
+
+## Multi-Token Prediction
+
+**多 token 预测（MTP）。** 在标准 next-token loss 之外，让辅助模块学习预测更远的后续 token。它增加训练信号，也可能用于 speculative decoding，但不属于 MoE routing。
 
 ## Optimizer
 
@@ -172,9 +196,17 @@ tableOfContents:
 
 把文本编码成 token ID，并把 ID 解码回文本的规则、词表与实现。
 
+## Top-k routing
+
+**Top-k 路由。** MoE router 为每个 token 对所有 experts 打分，只选择分数最高的 `k` 个执行，再按 gate weight 合并输出。它保证计算稀疏，但不自动保证 expert 负载均衡。
+
 ## Transformer
 
 以 attention 和逐位置前馈网络为核心构件的神经网络架构。现代语言模型通常堆叠很多 Transformer block；基础数据流见[Transformer block 与 Attention](../../foundations/transformer-attention/)。
+
+## Upcycling
+
+**稠密模型再利用。** 把已有 dense checkpoint 的 FFN 权重复制或拆分成多个 experts，再继续训练为 MoE，以复用预训练投入。它仍需要训练 router，并让初始相同的 experts 逐渐分化。
 
 ## Vocabulary
 

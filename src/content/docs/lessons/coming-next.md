@@ -8,8 +8,8 @@ description: 2026 CS336 课程内容的笔记建设路线。
 | 阶段 | 主题 | 状态 |
 | --- | --- | --- |
 | Foundations | 概念地图、数学、PyTorch、Transformer 与 Attention | 初版 |
-| Lectures 1–3 | tokenization、PyTorch、资源核算、architecture 与 hyperparameters | 完整讲义 |
-| Lectures 4–6 | attention alternatives、MoE、GPU、TPU、Triton | 待写 |
+| Lectures 1–4 | tokenization、PyTorch、资源核算、architecture、attention alternatives 与 MoE | 完整讲义 |
+| Lectures 5–6 | GPU、TPU、kernels 与 Triton | 待写 |
 | Lectures 7–10 | parallelism、scaling、inference | 待写 |
 | Lectures 11–14 | evaluation、data | 待写 |
 | Lectures 15–19 | post-training、alignment、guest lectures | 待写 |

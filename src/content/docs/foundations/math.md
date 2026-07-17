@@ -18,6 +18,7 @@ tableOfContents:
 - [Lecture 2 · PyTorch 与资源核算](../../lessons/02-pytorch-resources/)：检查矩阵乘法 shape，并理解 autograd 如何用链式法则计算 gradient。
 - [Transformer block 与 Attention](../transformer-attention/)：用内积比较 Q/K，用 softmax 得到读取权重。
 - [Lecture 3 · Architecture & Hyperparameters](../../lessons/03-architecture-hyperparameters/)：读取 RMSNorm、RoPE、attention softmax 和 stability trick 的公式。
+- [Lecture 4 · Attention Alternatives & Mixture of Experts](../../lessons/04-attention-alternatives-moe/)：使用矩阵乘法结合律、外积、top-k 与加权和分析替代架构。
 - 后续 loss、normalization、scaling law 与 sampling 内容会继续回链到本页。
 
 ## 阅读公式的固定顺序

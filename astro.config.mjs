@@ -67,6 +67,7 @@ export default defineConfig({
             { label: '01 · Overview & Tokenization', slug: 'lessons/01-tokenization' },
             { label: '02 · PyTorch 与资源核算', slug: 'lessons/02-pytorch-resources' },
             { label: '03 · Architecture & Hyperparameters', slug: 'lessons/03-architecture-hyperparameters' },
+            { label: '04 · Attention Alternatives & MoE', slug: 'lessons/04-attention-alternatives-moe' },
             { label: '后续课程占位与计划', slug: 'lessons/coming-next' }
           ]
         },

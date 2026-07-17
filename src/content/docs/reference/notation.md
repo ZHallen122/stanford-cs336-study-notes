@@ -19,6 +19,11 @@ description: 集中解释讲义中反复使用的维度名和数学符号。
 | `d_ff` / feed-forward dimension | FFN 内部扩展后的宽度 |
 | `L` / layers | 堆叠的 Transformer block 数量 |
 | `W` / attention window | sliding-window attention 中每个位置可读取的局部范围 |
+| `N` / flattened tokens | 展平 batch 与 sequence 后的 token 数，通常 `N = B × T` |
+| `E` / experts | MoE 中 routed expert 的数量 |
+| `k` / active experts | MoE 中每个 token 选择的 routed expert 数量 |
+| `C` / expert capacity | 一个 expert 在一次 dispatch 中最多接收的 token assignment 数 |
+| `d_φ` / feature width | linear attention 中 query/key feature map 的输出维度 |
 
 ## 典型 shape
 
@@ -31,6 +36,8 @@ description: 集中解释讲义中反复使用的维度名和数学符号。
 | query / key / value（MHA） | `(B, H, T, d_head)` |
 | query / key / value（GQA） | Q 为 `(B, H_q, T, d_head)`；K/V 为 `(B, H_kv, T, d_head)` |
 | FFN 中间 activation | `(B, T, d_ff)` |
+| MoE router logits | 展平后为 `(N, E)`，其中 `N = B × T` |
+| Linear attention recurrent state | `S` 为 `(d_φ, d_v)`；归一化状态 `z` 为 `(d_φ)` |
 | 线性变换 `X @ W` | `(B, D) @ (D, K) → (B, K)` |
 
 ## 阅读规则
